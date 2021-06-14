@@ -14,6 +14,10 @@ project('heart-break', 'cpp', 'c',
 
 sources = []
 incdirs = []
+
+# part of a stupid hack to get around meson's deficiencies as a build system
+data_out_dir = meson.current_build_dir() / 'data'
+
 subdir('libs')
 subdir('source')
 
