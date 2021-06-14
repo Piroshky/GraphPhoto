@@ -1,0 +1,5 @@
+* application has to be launched from directory the exe is in
+stbi_load tries to load files from the wrong place otherwise
+
+* Imgui::IsItemHovered not working on nodes.* 
+ 
