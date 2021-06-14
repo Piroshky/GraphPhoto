@@ -21,18 +21,23 @@ data_out_dir = meson.current_build_dir() / 'data'
 subdir('libs')
 subdir('source')
 
-glfw3 = dependency('glfw3')
 
+gegl  = dependency('gegl-0.4')
+glfw3 = dependency('glfw3')
+gl    = dependency('gl')
+
+# Naturally you can't just register libdl like a normal library.
+# This isn't meson's fault, it's because of some stupid nonsense the GNU people
+# are doing. 
 cc = meson.get_compiler('c')
 libdl = cc.find_library('dl')
 
-gl = dependency('gl')
-
 summary (
   {
-    'glfw3' : glfw3.found(),
-    'libdl' : libdl.found(),
+    'gegl'  :  gegl.found(),
+    'glfw3' : glfw3.found(),    
     'gl'    :    gl.found(),
+    'libdl' : libdl.found(),
   }
 )
 
@@ -40,5 +45,5 @@ exe = executable(
   'heart_break',
   sources,
   include_directories : incdirs,
-  dependencies: [gl3w_dep, glfw3, libdl, gl]
+  dependencies: [gl3w_dep, glfw3, libdl, gl, gegl]
 )

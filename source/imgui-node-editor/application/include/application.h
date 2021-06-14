@@ -2,6 +2,7 @@
 #include <imgui.h>
 
 ImTextureID Application_LoadTexture(const char* path);
+ImTextureID Application_LoadRGBA32(void* data, int width, int height);
 ImTextureID Application_CreateTexture(const void* data, int width, int height);
 void        Application_DestroyTexture(ImTextureID texture);
 int         Application_GetTextureWidth(ImTextureID texture);

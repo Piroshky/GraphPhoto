@@ -2,6 +2,8 @@
 #include "utilities/builders.h"
 #include "utilities/widgets.h"
 #include <imgui_node_editor.h>
+#include <gegl.h>
+
 
 #define IMGUI_DEFINE_MATH_OPERATORS
 
@@ -27,6 +29,8 @@ static inline ImRect ImRect_Expanded(const ImRect& rect, float x, float y)
 using ax::Widgets::IconType;
 
 static ed::EditorContext* editor = nullptr;
+
+
 
 //extern "C" __declspec(dllimport) short __stdcall GetAsyncKeyState(int vkey);
 //extern "C" bool Debug_KeyPress(int vkey)
@@ -115,23 +119,21 @@ struct Node {
   }
 };
 
-struct think {
-int a;
-};
-
 static const int            s_PinIconSize = 24;
-static std::vector<think>    s_todes;
 static std::vector<Node>    s_Nodes;
 static std::vector<Link>    s_Links;
 static ImTextureID          s_HeaderBackground = nullptr;
 //static ImTextureID          s_SampleImage = nullptr;
 static ImTextureID          s_SaveIcon = nullptr;
 static ImTextureID          s_RestoreIcon = nullptr;
+static ImTextureID          s_Test = nullptr;
 
-struct NodeIdLess
-{
-    bool operator()(const NodeId& lhs, const NodeId& rhs) const
-    {
+
+int testimageWidth;
+int testimageHeight;
+
+struct NodeIdLess {
+    bool operator()(const NodeId& lhs, const NodeId& rhs) const {
         return lhs.AsPointer() < rhs.AsPointer();
     }
 };
@@ -343,7 +345,8 @@ void Application_Initialize() {
     };
 
     editor = CreateEditor(&config);
-
+    
+    
     Node* node;
     node = create_node__gegl_alien_map();      editor->SetNodePosition(node->ID, ImVec2(-252, 220));
     node = create_node__gegl_alien_map();      editor->SetNodePosition(node->ID, ImVec2(-252, 220));
@@ -351,6 +354,78 @@ void Application_Initialize() {
 
     editor->NavigateToContent();
 
+    gegl_init(nullptr, nullptr);
+    g_object_set (gegl_config (),
+		  "application-license", "GPL3",
+		  NULL);
+
+    GeglNode *gegl = gegl_node_new ();
+    GeglNode *load = gegl_node_new_child (gegl,
+					  "operation", "gegl:load",
+					  "path", "MyImage01.jpg",
+					  NULL);
+
+    GeglNode *over       = gegl_node_new_child (gegl,
+						"operation", "gegl:over",
+						NULL);
+    GeglNode *text       = gegl_node_new_child (gegl,
+						"operation", "gegl:text",
+						"size", 10.0,
+						"color", gegl_color_new ("rgb(1.0,1.0,1.0)"),
+						"string", "Hell Yes",
+						NULL);
+
+    GeglBuffer *buffer  = NULL;
+    // g_autoptr (GeglBuffer) buffer = NULL;
+
+    GeglNode *sink = gegl_node_new_child (gegl,
+					  "operation", "gegl:buffer-sink",
+					  "buffer", &buffer,
+					  NULL);
+    
+    gegl_node_link_many(load, over, sink, NULL);
+    gegl_node_connect_to (text, "output",  over, "aux");
+    gegl_node_process(sink);    
+    
+    testimageHeight = gegl_buffer_get_height(buffer);
+    testimageWidth  = gegl_buffer_get_width(buffer);
+    int count = gegl_buffer_get_pixel_count(buffer);       
+
+    // printf("w: %d\, h: %d\n", testimageHeight, testimageWidth);
+
+    size_t testsize = count * 4 * sizeof(char);
+    printf("testsize %d\n", testsize);
+    
+    void *data = malloc(testsize);
+
+    if (data == nullptr) {
+      printf("MALLOC FAILED!\n");
+    } else {
+      printf("data %p\n", data);
+    }
+
+    gegl_buffer_get (buffer,
+		     NULL,
+		     1.0,
+		     babl_format ("R'G'B'A u8"),
+		     data, GEGL_AUTO_ROWSTRIDE,
+		     GEGL_ABYSS_NONE);
+
+    // for (int i = 0; i < count ; i += 4) {
+    //   ((char *)data)[i] = 255;
+    //   ((char *)data)[i+1] = 0;
+    //   ((char *)data)[i+2] = 0;
+    //   ((char *)data)[i+3] = 255;
+    // }
+
+    s_Test = Application_LoadRGBA32(data, testimageWidth, testimageHeight);
+
+    // s_Test             = Application_LoadTexture("MyImage01.jpg");
+    // testimageWidth  = Application_GetTextureWidth(s_Test);
+    // testimageHeight = Application_GetTextureWidth(s_Test);
+
+
+    
     BuildNodes();
 
     // s_Links.push_back(Link(GetNextLinkId(), s_Nodes[5].Outputs[0].ID, s_Nodes[6].Inputs[0].ID));
@@ -360,7 +435,7 @@ void Application_Initialize() {
     s_HeaderBackground = Application_LoadTexture("data/BlueprintBackground.png");
     s_SaveIcon         = Application_LoadTexture("data/ic_save_white_24dp.png");
     s_RestoreIcon      = Application_LoadTexture("data/ic_restore_white_24dp.png");
-
+    
     //auto& io = ImGui::GetIO();
 }
 
@@ -547,6 +622,8 @@ void ShowLeftPane(float paneWidth) {
     int saveIconHeight    = Application_GetTextureWidth(s_SaveIcon);
     int restoreIconWidth  = Application_GetTextureWidth(s_RestoreIcon);
     int restoreIconHeight = Application_GetTextureWidth(s_RestoreIcon);
+
+
 
     ImGui::GetWindowDrawList()->AddRectFilled(
         ImGui::GetCursorScreenPos(),
@@ -820,6 +897,12 @@ void Application_Frame() {
 
   auto& io = ImGui::GetIO();
 
+  ImGui::Begin("OpenGL Texture Text");
+  ImGui::Text("pointer = %p", s_Test);
+  ImGui::Text("size = %d x %d", testimageWidth, testimageHeight);
+  ImGui::Image((void*)(intptr_t)s_Test, ImVec2(testimageWidth, testimageHeight));
+  ImGui::End();
+  
   ImGui::Text("FPS: %.2f (%.2gms)", io.Framerate, io.Framerate ? 1000.0f / io.Framerate : 0.0f);
 
   //auto& style = ImGui::GetStyle();
