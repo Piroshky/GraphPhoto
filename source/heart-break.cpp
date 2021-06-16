@@ -29,7 +29,7 @@ static inline ImRect ImRect_Expanded(const ImRect& rect, float x, float y)
 using ax::Widgets::IconType;
 
 static ed::EditorContext* editor = nullptr;
-
+GeglNode *graph;
 
 
 //extern "C" __declspec(dllimport) short __stdcall GetAsyncKeyState(int vkey);
@@ -63,6 +63,11 @@ enum class NodeStyle {
   Houdini
 };
 
+enum class node_kind {
+  GEGL,
+  BUILTIN,
+};
+
 struct Node;
 struct Link;
 
@@ -74,14 +79,14 @@ typedef ed::PinDirection PinDirection;
 
 struct Pin {
   PinId   ID;
-  ::Node*     Node;
+  NodeId     node_id;
   std::string Name;
   PinType     Type;
   PinDirection     Kind;
   std::vector<LinkId> links;
 
-  Pin(int id, const char* name, PinType type):
-    ID(id), Node(nullptr), Name(name), Type(type), Kind(PinDirection::INPUT)
+  Pin(int id, int nid, const char* name, PinType type):
+    ID(id), node_id(nid), Name(name), Type(type), Kind(PinDirection::INPUT)
   {}
 };
 
@@ -106,9 +111,12 @@ struct Node {
   std::vector<Pin> Outputs;
   ImColor Color;
   NodeStyle Type;
+  NodeKind  kind;
   ImVec2 Size;
   bool is_selected;
 
+  GeglNode *gegl_node;
+  
   std::string State;
   std::string SavedState;
 
@@ -189,6 +197,10 @@ static Node* FindNode(NodeId id)
     return nullptr;
 }
 
+static Node *find_node(Pin *pin) {
+  return FindNode(pin->node_id);
+}
+
 static Link* FindLink(LinkId id)
 {
     for (auto& link : s_Links)
@@ -241,7 +253,20 @@ void delete_link(LinkId link_id) {
   editor->DeleteLink(link_id);
 }
 
+bool link_gegl(GeglNode *source, GeglNode *sink) {
+  if (!GEGL_IS_NODE(source)) {
+    printf("source is not a gegl node\n");
+  }
+
+  if (!GEGL_IS_NODE(sink)) {
+    printf("sink is not a gegl node\n");
+  }
+  return gegl_node_connect_to(source, "output",
+			      sink,   "input");
+}
+
 void create_link(PinId startPinId, PinId endPinId) {
+  printf("create link\n");
   LinkId new_link = GetNextId();
   s_Links.emplace_back(new_link, startPinId, endPinId); 
   
@@ -252,6 +277,46 @@ void create_link(PinId startPinId, PinId endPinId) {
     fprintf(stderr, "error: tried to create and one or more of the pins is missing\n");
     exit(1);
   }
+  if (start->node_id.Get() == 0 || end->node_id.Get() == 0) {
+    fprintf(stderr, "error: tried to create link between pins with a null node\n");
+    exit(1);
+  }
+
+  Node *start_node = FindNode(start->node_id);
+  Node *end_node   = FindNode(end->node_id);
+
+  if (start_node == nullptr || end_node == nullptr) {
+    fprintf(stderr, "error: tried to create a link and one or more of the nodes is missing\n");
+    exit(1);
+  }
+  
+  GeglNode *gegl_source = start_node->gegl_node;
+  GeglNode *gegl_sink   = end_node->gegl_node;  
+  if (gegl_sink == NULL || gegl_source == NULL) {
+    fprintf(stderr, "error: tried to create link between nodes with a null gegl_node\n");
+    exit(1);
+  }
+
+  if (! GEGL_IS_NODE(gegl_source)) {
+    printf("source not gegl node\n");
+  } 
+
+  if (! GEGL_IS_NODE(gegl_sink)) {
+    printf("sink not gegl node\n");
+  } 
+  
+  printf("trying to connect %s %s to %s %s, (NodeId %ld to %ld), (Pointer %p )\n",
+	 start_node->Name.c_str(), start->Name.c_str(),
+	 end_node->Name.c_str(),   end->Name.c_str(),
+	 start_node->ID.Get(),     end_node->ID.Get()), start_node;
+  
+  
+  if (!gegl_node_connect_to(gegl_source, "output",
+	                    gegl_sink,   "input")) {
+    fprintf(stderr, "error: could not connect gegl nodes\n");
+    exit(1);
+  }
+  
   start->links.emplace_back(new_link);
   if (!end->links.empty()) {
     printf ("end pin not empty\n");
@@ -260,7 +325,7 @@ void create_link(PinId startPinId, PinId endPinId) {
     }
   }
   end->links.clear();
-  end->links.emplace_back(new_link);    
+  end->links.emplace_back(new_link);
 }
 
 
@@ -279,7 +344,7 @@ static bool IsPinLinked(PinId id)
 }
 
 static bool CanCreateLink(Pin* a, Pin* b) {
-  if (!a || !b || a == b || a->Node == b->Node ||
+  if (!a || !b || a == b || a->node_id == b->node_id ||
       a->Kind == b->Kind || a->Type != b->Type ||
       b->links.size() != 0)
       return false;
@@ -292,24 +357,57 @@ static bool CanCreateLink(Pin* a, Pin* b) {
 
 static void BuildNode(Node* node) {
   for (auto& input : node->Inputs) {
-    input.Node = node;
+    input.node_id = node->ID;
     input.Kind = PinDirection::INPUT;
   }
 
   for (auto& output : node->Outputs) {
-    output.Node = node;
+    output.node_id = node->ID;
     output.Kind = PinDirection::OUTPUT;
   }
 }
 
-#include "prebuilt-gegl-nodes.c"
-#include "heartbreak_menu.h"
+#include "prebuilt_create_node.inl"
+#include "heartbreak_menu.inl"
 
 void BuildNodes() {
   for (auto& node : s_Nodes)  {
     BuildNode(&node);
-
   }
+}
+
+NodeId create_gegl_node(char *name) {
+  NodeId node_id = create_node_by_name(name);
+  GeglNode *gn = gegl_node_new_child(graph, "operation", name, NULL);
+  FindNode(node_id)->gegl_node = gn;
+  
+  editor->SetNodePosition(node_id, ImVec2(-152, 220));
+  
+  Node *node = FindNode(node_id);
+  printf("Created Node %s, NodeId: %ld, Pointer: %p\n", node->Name.c_str(), node_id.Get(), node);
+  return node_id;
+}
+
+NodeId create_hb_node(char * name) {
+  NodeId node_id = create_hb_node_by_name(name);
+}
+
+void create_hb_canvas_node() {
+  // malloc image size
+}
+
+void update_hb_canvas_node(NodeId id) {
+  Node *node = FindNode(id);
+  // check that it's a canvas node.
+
+  gegl_buffer_get (buffer,
+		   NULL,
+		   1.0,
+		   babl_format ("R'G'B'A u8"),
+		   data, GEGL_AUTO_ROWSTRIDE,
+		   GEGL_ABYSS_NONE);
+  
+  m_image = Application_LoadRGBA32(data, testimageWidth, testimageHeight);
 }
 
 const char* Application_GetName() {
@@ -345,46 +443,54 @@ void Application_Initialize() {
     };
 
     editor = CreateEditor(&config);
-    
-    
-    Node* node;
-    node = create_node__gegl_alien_map();      editor->SetNodePosition(node->ID, ImVec2(-252, 220));
-    node = create_node__gegl_alien_map();      editor->SetNodePosition(node->ID, ImVec2(-252, 220));
-    node = create_node__gegl_alien_map();      editor->SetNodePosition(node->ID, ImVec2(-252, 220));
-
-    editor->NavigateToContent();
 
     gegl_init(nullptr, nullptr);
+    graph = gegl_node_new ();
     g_object_set (gegl_config (),
 		  "application-license", "GPL3",
 		  NULL);
 
-    GeglNode *gegl = gegl_node_new ();
-    GeglNode *load = gegl_node_new_child (gegl,
+    // // //
+    
+    NodeId alien = create_node("gegl:alien-map");   
+    NodeId bloom = create_node("gegl:bloom");  
+    create_link(FindNode(alien)->Outputs[0].ID, FindNode(bloom)->Inputs[0].ID);
+    
+    editor->NavigateToContent();
+
+
+    GeglNode *load = gegl_node_new_child (graph,
 					  "operation", "gegl:load",
 					  "path", "MyImage01.jpg",
 					  NULL);
 
-    GeglNode *over       = gegl_node_new_child (gegl,
+    GeglNode *edge = gegl_node_new_child(graph, "operation", "gegl:edge", NULL);
+
+    GeglNode *over       = gegl_node_new_child (graph,
 						"operation", "gegl:over",
 						NULL);
-    GeglNode *text       = gegl_node_new_child (gegl,
+    GeglNode *text       = gegl_node_new_child (graph,
 						"operation", "gegl:text",
-						"size", 10.0,
+						"size", 30.0,
 						"color", gegl_color_new ("rgb(1.0,1.0,1.0)"),
-						"string", "Hell Yes",
+						"string", "The Heart Break Photo Editor",
 						NULL);
 
     GeglBuffer *buffer  = NULL;
     // g_autoptr (GeglBuffer) buffer = NULL;
 
-    GeglNode *sink = gegl_node_new_child (gegl,
+    GeglNode *sink = gegl_node_new_child (graph,
 					  "operation", "gegl:buffer-sink",
 					  "buffer", &buffer,
 					  NULL);
     
-    gegl_node_link_many(load, over, sink, NULL);
-    gegl_node_connect_to (text, "output",  over, "aux");
+    // gegl_node_link_many(load, edge,  over, sink, NULL);
+
+    gegl_node_connect_to(load, "output",  edge, "input");
+    gegl_node_connect_to(edge, "output",  over, "input");
+    // gegl_node_connect_to(over, "output",  sink, "input");
+    link_gegl(over, sink);
+    // gegl_node_connect_to(text, "output",  over, "aux");
     gegl_node_process(sink);    
     
     testimageHeight = gegl_buffer_get_height(buffer);
@@ -393,16 +499,8 @@ void Application_Initialize() {
 
     // printf("w: %d\, h: %d\n", testimageHeight, testimageWidth);
 
-    size_t testsize = count * 4 * sizeof(char);
-    printf("testsize %d\n", testsize);
-    
+    size_t testsize = count * 4 * sizeof(char);    
     void *data = malloc(testsize);
-
-    if (data == nullptr) {
-      printf("MALLOC FAILED!\n");
-    } else {
-      printf("data %p\n", data);
-    }
 
     gegl_buffer_get (buffer,
 		     NULL,
@@ -768,7 +866,7 @@ void ShowLeftPane(float paneWidth) {
 	    ImVec2 pos(FLT_MAX, FLT_MAX);
 	    for (LinkId link : pin.links) {
 	      Pin *pin = FindPin(FindLink(link)->EndPinID);
-	      ImVec2 cur = editor->GetNodePosition(pin->Node->ID);
+	      ImVec2 cur = editor->GetNodePosition(pin->node_id);
 	      if (cur.y < pos.y) {
 		pos.y = cur.y;
 		top_link = link;
@@ -784,9 +882,9 @@ void ShowLeftPane(float paneWidth) {
       else if (linkCount == 1 && nodeCount == 0) {
 	Link* selected = FindLink(selectedLinks[0]);
 	Pin*  output   = FindPin(selected->EndPinID);
-	if (output && output->Node) {
+	if (output && find_node(output)) {
 	  editor->ClearSelection();
-	  editor->SelectNode(output->Node->ID, true);
+	  editor->SelectNode(output->node_id, true);
 	}
       }
     } 
@@ -807,9 +905,9 @@ void ShowLeftPane(float paneWidth) {
       else if (linkCount == 1 && nodeCount == 0) {
 	Link* selected = FindLink(selectedLinks[0]);
 	Pin*  input    = FindPin(selected->StartPinID);
-	if (input && input->Node) {
+	if (input && find_node(input)) {
 	  editor->ClearSelection();
-	  editor->SelectNode(input->Node->ID, true);
+	  editor->SelectNode(input->node_id, true);
 	}
       }
     } 
@@ -819,33 +917,34 @@ void ShowLeftPane(float paneWidth) {
       if (linkCount == 1 && nodeCount == 0) {
 	Link *selected = FindLink(selectedLinks[0]);
 	Pin  *input    = FindPin(selected->StartPinID);
-	Pin  *output   = FindPin(selected->EndPinID);
 
-	ImVec2 pos = editor->GetNodePosition(output->Node->ID);	
+	if (input->links.size() > 1) {
+	  Pin  *output   = FindPin(selected->EndPinID);       
 
-	LinkId top_link;
-	LinkId bottom_link;
-	ImVec2 bottom_pos(FLT_MAX, FLT_MAX);
-	ImVec2 start_pos = editor->GetNodePosition(output->Node->ID);
-	ImVec2 next_pos(FLT_MAX, FLT_MAX);
+	  LinkId top_link;
+	  LinkId bottom_link;
+	  ImVec2 bottom_pos(FLT_MAX, FLT_MAX);
+	  ImVec2 start_pos = editor->GetNodePosition(output->node_id);
+	  ImVec2 next_pos(FLT_MAX, FLT_MAX);
 
-	for (LinkId link : input->links) {
-	  if (link == selected->ID) {continue;}
-	  Pin *pin = FindPin(FindLink(link)->EndPinID);
-	  ImVec2 cur = editor->GetNodePosition(pin->Node->ID);
-	  if ((cur.y > start_pos.y) && (cur.y < next_pos.y)) {
-	    next_pos.y = cur.y;
-	    top_link = link;
+	  for (LinkId link : input->links) {
+	    if (link == selected->ID) {continue;}
+	    Pin *pin = FindPin(FindLink(link)->EndPinID);
+	    ImVec2 cur = editor->GetNodePosition(pin->node_id);
+	    if ((cur.y > start_pos.y) && (cur.y < next_pos.y)) {
+	      next_pos.y = cur.y;
+	      top_link = link;
+	    }
+	    if (cur.y < bottom_pos.y) {
+	      bottom_pos.y = cur.y;
+	      bottom_link = link;
+	    }
 	  }
-	  if (cur.y < bottom_pos.y) {
-	    bottom_pos.y = cur.y;
-	    bottom_link = link;
-	  }
+	  if (next_pos.y == FLT_MAX) {top_link = bottom_link;}
+
+	  editor->ClearSelection();
+	  editor->SelectLink(top_link, true);
 	}
-	if (next_pos.y == FLT_MAX) {top_link = bottom_link;}
-
-	editor->ClearSelection();
-	editor->SelectLink(top_link, true);
       }
     }
 
@@ -854,35 +953,39 @@ void ShowLeftPane(float paneWidth) {
       if (linkCount == 1 && nodeCount == 0) {
 	Link *selected = FindLink(selectedLinks[0]);
 	Pin  *input    = FindPin(selected->StartPinID);
-	Pin  *output   = FindPin(selected->EndPinID);
+	
+	if (input->links.size() > 1) {
+	  
+	  Pin  *output   = FindPin(selected->EndPinID);
 
-	ImVec2 start_pos = editor->GetNodePosition(output->Node->ID);
+	  ImVec2 start_pos = editor->GetNodePosition(output->node_id);
 
-	LinkId next_link;        
-	ImVec2 next_pos(FLT_MIN, FLT_MIN);
+	  LinkId next_link;        
+	  ImVec2 next_pos(FLT_MIN, FLT_MIN);
 
-	LinkId bottom_link;
-	ImVec2 bottom_pos(FLT_MAX, FLT_MAX);
+	  LinkId bottom_link;
+	  ImVec2 bottom_pos(FLT_MAX, FLT_MAX);
 
-	for (LinkId link : input->links) {
-	  if (link == selected->ID) {continue;}
+	  for (LinkId link : input->links) {
+	    if (link == selected->ID) {continue;}
 
-	  Pin   *pin = FindPin(FindLink(link)->EndPinID);
-	  ImVec2 cur = editor->GetNodePosition(pin->Node->ID);
+	    Pin   *pin = FindPin(FindLink(link)->EndPinID);
+	    ImVec2 cur = editor->GetNodePosition(pin->node_id);
 
-	  if ((cur.y < start_pos.y) && (cur.y > next_pos.y)) {
-	    next_pos.y = cur.y;
-	    next_link = link;
+	    if ((cur.y < start_pos.y) && (cur.y > next_pos.y)) {
+	      next_pos.y = cur.y;
+	      next_link = link;
+	    }
+	    if (cur.y < bottom_pos.y) {
+	      bottom_pos.y = cur.y;
+	      bottom_link = link;
+	    }
 	  }
-	  if (cur.y < bottom_pos.y) {
-	    bottom_pos.y = cur.y;
-	    bottom_link = link;
-	  }
+	  if (next_pos.y == FLT_MIN) {next_link = bottom_link;}
+
+	  editor->ClearSelection();
+	  editor->SelectLink(next_link, true);
 	}
-	if (next_pos.y == FLT_MIN) {next_link = bottom_link;}
-
-	editor->ClearSelection();
-	editor->SelectLink(next_link, true);
       }
     }
 
@@ -897,9 +1000,9 @@ void Application_Frame() {
 
   auto& io = ImGui::GetIO();
 
-  ImGui::Begin("OpenGL Texture Text");
-  ImGui::Text("pointer = %p", s_Test);
-  ImGui::Text("size = %d x %d", testimageWidth, testimageHeight);
+  ImGui::Begin("Canvas");
+  // ImGui::Text("pointer = %p", s_Test);
+  // ImGui::Text("size = %d x %d", testimageWidth, testimageHeight);
   ImGui::Image((void*)(intptr_t)s_Test, ImVec2(testimageWidth, testimageHeight));
   ImGui::End();
   
@@ -936,7 +1039,7 @@ void Application_Frame() {
 
       const bool isSimple = node.Type == NodeStyle::Simple;
 
-      bool hasOutputDelegates = false;
+      // bool hasOutputDelegates = false;
       //@TODO: what is this?
       // for (auto& output : node.Outputs)
       //     if (output.Type == PinType::Delegate)
@@ -1061,7 +1164,7 @@ void Application_Frame() {
 	ImGui::PopStyleVar();
 	builder.EndPad();
       }
-      auto drawList = ImGui::GetWindowDrawList();
+      // auto drawList = ImGui::GetWindowDrawList();
 
       builder.End();
     }
@@ -1548,7 +1651,7 @@ void Application_Frame() {
     ImGui::SetCursorScreenPos(cursorTopLeft);
   }
 
-# if 1
+  
   auto openPopupPosition = ImGui::GetMousePos();
   editor->Suspend();
   if (editor->ShowNodeContextMenu(&contextNodeId))
@@ -1596,8 +1699,8 @@ void Application_Frame() {
     if (pin)
     {
       ImGui::Text("ID: %p", pin->ID.AsPointer());
-      if (pin->Node)
-	ImGui::Text("Node: %p", pin->Node->ID.AsPointer());
+      if (find_node(pin))
+	ImGui::Text("Node: %p", pin->node_id.AsPointer());
       else
 	ImGui::Text("Node: %s", "<none>");
     }
@@ -1639,9 +1742,7 @@ void Application_Frame() {
     //   ImGui::EndMenu();
     // }
 
-    node = show_all_category_menus();
-    Node *ret = nullptr;
-
+    node = FindNode(show_all_category_menus());
 
     if (node) {
       BuildNodes();
@@ -1675,7 +1776,6 @@ void Application_Frame() {
     createNewNode = false;
   ImGui::PopStyleVar();
   editor->Resume();
-# endif
 
 /*
   cubic_bezier_t c;

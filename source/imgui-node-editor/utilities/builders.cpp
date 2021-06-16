@@ -30,7 +30,7 @@ void util::BlueprintNodeBuilder::Begin(ed::NodeId id) {
     HasHeader  = false;
     HeaderMin = HeaderMax = ImVec2();
 
-    EditorContext *newref = ed::GetEditor();
+    // EditorContext *newref = ed::GetEditor();
     ed::GetEditor()->PushStyleVar(StyleVar_NodePadding, ImVec4(8, 4, 8, 8));
     ed::GetEditor()->BeginNode(id);
 

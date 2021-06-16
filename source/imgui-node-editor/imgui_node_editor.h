@@ -126,57 +126,56 @@ enum class PinDirection {
 
 
 
-  template <typename T, typename Tag>
-  struct SafeType
+template <typename T, typename Tag>
+struct SafeType {
+  SafeType(T t)
+    : m_Value(std::move(t))
   {
-    SafeType(T t)
-      : m_Value(std::move(t))
-    {
-    }
+  }
 
-    SafeType(const SafeType&) = default;
+  SafeType(const SafeType&) = default;
 
-    template <typename T2, typename Tag2>
-    SafeType(
-      const SafeType
-      <
-      typename std::enable_if<!std::is_same<T, T2>::value, T2>::type,
-      typename std::enable_if<!std::is_same<Tag, Tag2>::value, Tag2>::type
-      >&) = delete;
+  template <typename T2, typename Tag2>
+  SafeType(
+    const SafeType
+    <
+    typename std::enable_if<!std::is_same<T, T2>::value, T2>::type,
+    typename std::enable_if<!std::is_same<Tag, Tag2>::value, Tag2>::type
+    >&) = delete;
 
-    SafeType& operator=(const SafeType&) = default;
+  SafeType& operator=(const SafeType&) = default;
 
-    explicit operator T() const { return Get(); }
+  explicit operator T() const { return Get(); }
 
-    T Get() const { return m_Value; }
+  T Get() const { return m_Value; }
 
-  private:
-    T m_Value;
-  };
+private:
+  T m_Value;
+};
 
-  template <typename Tag>
-  struct SafePointerType
-    : SafeType<uintptr_t, Tag>
+template <typename Tag>
+struct SafePointerType : SafeType<uintptr_t, Tag> {
+  static const Tag Invalid;
+
+  using SafeType<uintptr_t, Tag>::SafeType;
+
+  SafePointerType()
+    : SafePointerType(Invalid)
   {
-    static const Tag Invalid;
+  }
 
-    using SafeType<uintptr_t, Tag>::SafeType;
+  template <typename T = void> explicit SafePointerType(T* ptr)
+    : SafePointerType(reinterpret_cast<uintptr_t>(ptr)) {}
+  
+  template <typename T = void> T* AsPointer() const { return reinterpret_cast<T*>(this->Get()); }
 
-    SafePointerType()
-      : SafePointerType(Invalid)
-    {
-    }
-
-    template <typename T = void> explicit SafePointerType(T* ptr): SafePointerType(reinterpret_cast<uintptr_t>(ptr)) {}
-      template <typename T = void> T* AsPointer() const { return reinterpret_cast<T*>(this->Get()); }
-
-    explicit operator bool() const { return *this != Invalid; }
-  };
+  explicit operator bool() const { return *this != Invalid; }
+};
 
 
 struct PinId final: SafePointerType<PinId> {
   using SafePointerType::SafePointerType;
-};  
+};
 
 struct NodeId final: SafePointerType<NodeId> {
     using SafePointerType::SafePointerType;
@@ -1591,14 +1590,12 @@ template <typename Tag>
 const Tag SafePointerType<Tag>::Invalid = { 0 };
 
 template <typename Tag>
-inline bool operator==(const SafePointerType<Tag>& lhs, const SafePointerType<Tag>& rhs)
-{
+inline bool operator==(const SafePointerType<Tag>& lhs, const SafePointerType<Tag>& rhs) {
     return lhs.Get() == rhs.Get();
 }
 
 template <typename Tag>
-inline bool operator!=(const SafePointerType<Tag>& lhs, const SafePointerType<Tag>& rhs)
-{
+inline bool operator!=(const SafePointerType<Tag>& lhs, const SafePointerType<Tag>& rhs) {
     return lhs.Get() != rhs.Get();
 }
 

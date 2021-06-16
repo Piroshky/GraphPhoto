@@ -398,7 +398,7 @@ inline ImCubicBezierIntersectResult ImCubicBezierLineIntersect(const ImVec2& p0,
     // Expand and collect terms to form linear combinations of original Bezier
     // controls.  This ends up with a vector cubic in t:
     //     (-P0+3P1-3P2+P3)t^3 + (3P0-6P1+3P2)t^2 + (-3P0+3P1)t + P0
-    //             /\                  /\                /\       /\
+ /* //             /\                  /\                /\       /\      */
     //             ||                  ||                ||       ||
     //             c3                  c2                c1       c0
 
@@ -590,7 +590,7 @@ inline void ImCubicBezierFixedStep(ImCubicBezierFixedStepCallback callback, void
         float t_end   = t_max;
         float t       = t_0;
 
-        float t_best     = t;
+        // float t_best     = t;
         float error_best = total_length;
 
         while (true)
@@ -610,7 +610,7 @@ inline void ImCubicBezierFixedStep(ImCubicBezierFixedStepCallback callback, void
             if (error < error_best)
             {
                 error_best = error;
-                t_best     = t;
+                // t_best     = t;
             }
 
             if (ImFabs(error) <= max_value_error || ImFabs(t_start - t_end) <= max_t_error)

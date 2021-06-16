@@ -1,6 +1,8 @@
 project('heart-break', 'cpp', 'c',
   version : '0.1',
-  default_options : ['warning_level=3'])
+  default_options : ['warning_level=1'])
+
+add_global_arguments('-Werror=return-type', language : 'cpp') ## the gcc people are assholes and/or c++ is unbelievably shitty
 
 # gl3w_lib = static_library(
 #   'gl3w',
@@ -40,6 +42,7 @@ summary (
     'libdl' : libdl.found(),
   }
 )
+
 
 exe = executable(
   'heart_break',
