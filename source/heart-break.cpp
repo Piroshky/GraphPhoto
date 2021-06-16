@@ -68,6 +68,7 @@ enum class NodeStyle {
 enum class node_kind {
   GEGL,
   BUILTIN,
+  CANVAS,
 };
 
 struct Node;
@@ -80,7 +81,7 @@ typedef ed::LinkId LinkId;
 typedef ed::PinDirection PinDirection;
 
 struct Pin {
-  PinId        D;
+  PinId        ID;
   NodeId       node_id;
   std::string     Name;
   PinType         Type;
@@ -110,12 +111,16 @@ struct Node {
   std::vector<Pin> Outputs;
   
   NodeStyle Type;
-  NodeKind  kind;
+  node_kind  kind;
   ImColor   Color;
   ImVec2    Size;
   bool is_selected;
 
-  GeglNode *gegl_node;
+  GeglNode    *gegl_node;
+  GeglBuffer  *gegl_buffer;
+  void        *image_data;  
+  ImTextureID  texture;
+  ImVec2       size;
   
   std::string State;
   std::string SavedState;
@@ -274,8 +279,14 @@ void create_link(PinId startPinId, PinId endPinId) {
   
   GeglNode *gegl_source = start_node->gegl_node;
   GeglNode *gegl_sink   = end_node->gegl_node;  
-  if (gegl_sink == NULL || gegl_source == NULL) {
-    fprintf(stderr, "error: tried to create link between nodes with a null gegl_node\n");
+  if (gegl_source == NULL) {
+    fprintf(stderr, "error: tried to create link between %s and %s, but source had null gegl_node\n",
+            start_node->Name.c_str(), end_node->Name.c_str());
+    exit(1);
+  }
+  if (gegl_sink == NULL) {
+    fprintf(stderr, "error: tried to create link between %s and %s, but sink had null gegl_node\n",
+            start_node->Name.c_str(), end_node->Name.c_str());
     exit(1);
   }
 
@@ -293,8 +304,8 @@ void create_link(PinId startPinId, PinId endPinId) {
 	 start_node->ID.Get(),     end_node->ID.Get()), start_node;
   
   
-  if (!gegl_node_connect_to(gegl_source, "output",
-	                    gegl_sink,   "input")) {
+  if (!gegl_node_connect_to(gegl_source, start->Name.c_str(),
+	                    gegl_sink,   end->Name.c_str())) {
     fprintf(stderr, "error: could not connect gegl nodes\n");
     exit(1);
   }
@@ -353,43 +364,183 @@ void BuildNodes() {
 #include "prebuilt_create_node.inl"
 #include "heartbreak_menu.inl"
 
+// backup
+// // creates a ui node and sets its gegl_node member to the appropriate gegl node
+// NodeId create_gegl_node(char *name) {
+//   NodeId node_id = create_node_by_name(name);
+  
+//   if (node_id.Get() == 0) { return node_id; }
+  
+//   GeglNode *gn = gegl_node_new_child(graph, "operation", name, NULL);
+//   FindNode(node_id)->gegl_node = gn;
+  
+//   editor->SetNodePosition(node_id, ImVec2(-152, 220));
+  
+//   Node *node = FindNode(node_id);
+//   printf("Created Node %s, NodeId: %ld, Pointer: %p\n", node->Name.c_str(), node_id.Get(), node);
+//   return node_id;
+// }
+
 
 // creates a ui node and sets its gegl_node member to the appropriate gegl node
 NodeId create_gegl_node(char *name) {
-  NodeId node_id = create_node_by_name(name);
-  if (node_id == 0) { return node_id; }
-  
   GeglNode *gn = gegl_node_new_child(graph, "operation", name, NULL);
-  FindNode(node_id)->gegl_node = gn;
   
-  editor->SetNodePosition(node_id, ImVec2(-152, 220));
+  NodeId node_id = GetNextId();
+  int nid = node_id.Get();
+
+  const char *operation_name = gegl_node_get_operation(gn); // in case the operation was created through an alias, a "compat-name".
+  std::string title = "No Title";
   
-  Node *node = FindNode(node_id);
+  if (operation_name) {
+    title = gegl_operation_get_key (operation_name, "title");
+  } else {
+    operation_name = "No Name";
+  }
+
+  s_Nodes.emplace_back(nid, title.c_str(), ImColor(255, 128, 128));
+  Node *node = &s_Nodes.back();
+  node->kind = node_kind::GEGL;
+
+  // Input pads
+  {
+    gchar ** ip = gegl_node_list_input_pads(gn);
+    for (gchar **s = ip; s != NULL && *s != 0; ++s) {
+      node->Inputs.emplace_back(GetNextId(), nid, *s, PinType::GEGL_BUFFER);
+    }
+  }
+
+  {
+    guint        n_properties;
+    GParamSpec **properties = gegl_operation_list_properties (name, &n_properties);
+    for (int i = 0; i < n_properties; i++) {
+      const gchar  *property_name;
+      const GValue *property_default;
+      gchar        *property_blurb;
+      gchar        *default_string = NULL;
+      PinType pintype;
+
+      property_name = g_param_spec_get_name (properties[i]);
+      property_default = g_param_spec_get_default_value (properties[i]);
+      //@Todo set node defaults by gegl default
+      switch (G_VALUE_TYPE (property_default))
+      {
+      case G_TYPE_DOUBLE:
+	pintype = PinType::DOUBLE;
+	/* default_string = g_strdup_printf (" (default: %f)", */
+	/* 					g_value_get_double (property_default)); */
+	break;
+      case G_TYPE_STRING:
+	pintype = PinType::STRING;
+	/* default_string = g_strdup_printf (" (default: \"%s\")", */
+	/* 					g_value_get_string (property_default)); */
+	break;
+      case G_TYPE_INT:
+	pintype = PinType::INT;
+	/* default_string = g_strdup_printf (" (default: %d)", */
+	/* 					g_value_get_int (property_default)); */
+	break;
+      case G_TYPE_BOOLEAN:
+	pintype = PinType::BOOLEAN;
+	/* default_string = g_strdup_printf (" (default: %s)", */
+	/* 					g_value_get_boolean (property_default)? */
+	/* 					"TRUE" : "FALSE"); */
+	break;
+      default:
+	default_string = NULL;
+	fprintf(stderr, "ERROR: %s %s : property kind unhandled: %s\n", name, property_name, g_type_name(properties[i]->value_type));
+	continue;
+	break;
+      }
+      /* property_blurb = g_strconcat ("[", */
+      /* 				  g_type_name (properties[i]->value_type), */
+      /* 				  "] ", */
+      /* 				  g_param_spec_get_blurb (properties[i]), */
+      /* 				  default_string, */
+      /* 				  NULL); */
+      /* g_free (property_blurb); */
+      /* g_free (default_string); */
+      node->Inputs.emplace_back(GetNextId(), nid, property_name, pintype);
+    }
+  }
+  
+
+  // Output Pads
+  {
+    gchar ** op = gegl_node_list_output_pads(gn);
+    for (gchar **s = op; s != NULL && *s != 0; ++s) {
+      node->Outputs.emplace_back(GetNextId(), nid, *s, PinType::GEGL_BUFFER);
+    }
+  }
+  
+  node->gegl_node = gn;
+  BuildNode(node);
+
+  // if (node_id.Get() == 0) { return node_id; }
+  // FindNode(node_id)->gegl_node = gn;
+  
+  editor->SetNodePosition(nid, ImVec2(-152, 220));
+  
   printf("Created Node %s, NodeId: %ld, Pointer: %p\n", node->Name.c_str(), node_id.Get(), node);
   return node_id;
 }
 
-NodeId create_hb_node(char * name) {
-  NodeId node_id = create_hb_node_by_name(name);
-}
+// NodeId create_hb_node(char * name) {
+//   NodeId node_id = create_hb_node_by_name(name);
+// }
 
-void create_hb_canvas_node() {
+NodeId create_hb_canvas_node() {
   // malloc image size
+  int nid = GetNextId();
+  s_Nodes.emplace_back(nid, "Canvas", ImColor(255, 128, 128));
+  Node *node = &s_Nodes.back();
+  node->Inputs.emplace_back(GetNextId(), nid, "input", PinType::GEGL_BUFFER);
+  node->Name = "Canvas";
+  GeglNode *sink = gegl_node_new_child(graph,
+				       "operation", "gegl:buffer-sink",
+				       "buffer",    &(node->gegl_buffer), NULL);
+  node->gegl_node = sink;
+  printf("create node->gegl_node %p\n", node->gegl_node);
+  return nid;
 }
 
-void update_hb_canvas_node(NodeId id) {
-  Node *node = FindNode(id);
-  // check that it's a canvas node.
+void hb_canvas_node_process(NodeId node_id) {
+  Node *node = FindNode(node_id);
+  node->kind = node_kind::CANVAS;
+  printf("reassigning buffer\n");
+  printf("hb node->gegl_node %p\n", node->gegl_node);
+  gegl_node_set(node->gegl_node, "buffer", &(node->gegl_buffer), NULL);
+  printf("reassigned buffer\n");
+  gegl_node_process(node->gegl_node);
+  int h = gegl_buffer_get_height(node->gegl_buffer);
+  int w = gegl_buffer_get_width(node->gegl_buffer);
+  node->size = ImVec2(w, h);
+  int pixels = gegl_buffer_get_pixel_count(node->gegl_buffer);
+  node->image_data = malloc(pixels * 4 * sizeof(char));
+  gegl_buffer_get(node->gegl_buffer,
+		  NULL,
+		  1.0,
+		  babl_format ("R'G'B'A u8"),
+		  node->image_data, GEGL_AUTO_ROWSTRIDE,
+		  GEGL_ABYSS_NONE);
+  node->texture = Application_LoadRGBA32(node->image_data, w, h);
+  printf("node->texture %p\n", node->texture);
+  printf("h: %d, w: %d, count: %d\n", h, w, pixels);
+}
 
-  gegl_buffer_get (buffer,
-		   NULL,
-		   1.0,
-		   babl_format ("R'G'B'A u8"),
-		   data, GEGL_AUTO_ROWSTRIDE,
-		   GEGL_ABYSS_NONE);
+// void update_hb_canvas_node(NodeId id) {
+//   Node *node = FindNode(id);
+//   // check that it's a canvas node.
+
+//   gegl_buffer_get (buffer,
+// 		   NULL,
+// 		   1.0,
+// 		   babl_format ("R'G'B'A u8"),
+// 		   data, GEGL_AUTO_ROWSTRIDE,
+// 		   GEGL_ABYSS_NONE);
   
-  m_image = Application_LoadRGBA32(data, testimageWidth, testimageHeight);
-}
+//   m_image = Application_LoadRGBA32(data, testimageWidth, testimageHeight);
+// }
 
 void Application_Initialize() {
   ed::Config config;
@@ -429,63 +580,71 @@ void Application_Initialize() {
 
   // // //
     
-  NodeId alien = create_node("gegl:alien-map");   
-  NodeId bloom = create_node("gegl:bloom");  
-  create_link(FindNode(alien)->Outputs[0].ID, FindNode(bloom)->Inputs[0].ID);
-    
-  editor->NavigateToContent();
+  // NodeId alien = create_gegl_node("gegl:alien-map");   
+  // NodeId bloom = create_gegl_node("gegl:bloom");  
+  // create_link(FindNode(alien)->Outputs[0].ID, FindNode(bloom)->Inputs[0].ID);
+     
+  
+  NodeId n_load = create_gegl_node("gegl:load");
+  GeglNode *load = FindNode(n_load)->gegl_node;
+  gegl_node_set(load, "path", "MyImage01.jpg", NULL);
 
+  NodeId n_edge = create_gegl_node("gegl:edge");
+  GeglNode *edge = FindNode(n_edge)->gegl_node;
+  
+  NodeId n_over = create_gegl_node("svg:src-over");
+  GeglNode *over = FindNode(n_over)->gegl_node;
 
-  GeglNode *load = gegl_node_new_child (graph,
-					"operation", "gegl:load",
-					"path", "MyImage01.jpg",
-					NULL);
+  NodeId n_text = create_gegl_node("gegl:text");
+  GeglNode *text = FindNode(n_text)->gegl_node;
+  gegl_node_set(text, "size", 30.0,
+		"color", gegl_color_new ("rgb(1.0,1.0,1.0)"),
+		"string", "The Heart Break Photo Editor",
+		NULL);
+  
+  // GeglBuffer *buffer  = NULL;
+  // NodeId n_sink = create_gegl_node("gegl:buffer-sink");
+  // GeglNode *sink = FindNode(n_sink)->gegl_node;
+  // gegl_node_set(sink, "operation", "gegl:buffer-sink",
+  // 		"buffer", &buffer,
+  // 		NULL);
 
-  GeglNode *edge = gegl_node_new_child(graph, "operation", "gegl:edge", NULL);
-
-  GeglNode *over       = gegl_node_new_child (graph,
-					      "operation", "gegl:over",
-					      NULL);
-  GeglNode *text       = gegl_node_new_child (graph,
-					      "operation", "gegl:text",
-					      "size", 30.0,
-					      "color", gegl_color_new ("rgb(1.0,1.0,1.0)"),
-					      "string", "The Heart Break Photo Editor",
-					      NULL);
-
-  GeglBuffer *buffer  = NULL;
-  // g_autoptr (GeglBuffer) buffer = NULL;
-
-  GeglNode *sink = gegl_node_new_child (graph,
-					"operation", "gegl:buffer-sink",
-					"buffer", &buffer,
-					NULL);
-    
+  NodeId n_sink = create_hb_canvas_node();
+  GeglNode *sink = FindNode(n_sink)->gegl_node;
   // gegl_node_link_many(load, edge,  over, sink, NULL);
 
-  gegl_node_connect_to(load, "output",  edge, "input");
-  gegl_node_connect_to(edge, "output",  over, "input");
+  create_link(FindNode(n_load)->Outputs[0].ID, FindNode(n_edge)->Inputs[0].ID);
+  create_link(FindNode(n_edge)->Outputs[0].ID, FindNode(n_over)->Inputs[1].ID);
+  create_link(FindNode(n_over)->Outputs[0].ID, FindNode(n_sink)->Inputs[0].ID);
+  create_link(FindNode(n_text)->Outputs[0].ID, FindNode(n_over)->Inputs[0].ID);
+  // gegl_node_connect_to(load, "output",  edge, "input");
+  // gegl_node_connect_to(edge, "output",  over, "input");
   // gegl_node_connect_to(over, "output",  sink, "input");
   // gegl_node_connect_to(text, "output",  over, "aux");
-  gegl_node_process(sink);    
-    
-  testimageHeight = gegl_buffer_get_height(buffer);
-  testimageWidth  = gegl_buffer_get_width(buffer);
-  int count = gegl_buffer_get_pixel_count(buffer);       
+  // gegl_node_process(sink);
+  printf("here\n");
+  hb_canvas_node_process(n_sink);
+  printf("processed canvas\n");
+  
+  // testimageHeight = gegl_buffer_get_height(buffer);
+  // testimageWidth  = gegl_buffer_get_width(buffer);
+  // int count = gegl_buffer_get_pixel_count(buffer);  
+  // size_t testsize = count * 4 * sizeof(char);
+  // void *data = malloc(testsize);
 
-
-  size_t testsize = count * 4 * sizeof(char);    
-  void *data = malloc(testsize);
-
-  gegl_buffer_get (buffer,
-		   NULL,
-		   1.0,
-		   babl_format ("R'G'B'A u8"),
-		   data, GEGL_AUTO_ROWSTRIDE,
-		   GEGL_ABYSS_NONE);
-
-  s_Test = Application_LoadRGBA32(data, testimageWidth, testimageHeight);
-    
+  // gegl_buffer_get (buffer,
+  // 		   NULL,
+  // 		   1.0,
+  // 		   babl_format ("R'G'B'A u8"),
+  // 		   data, GEGL_AUTO_ROWSTRIDE,
+  // 		   GEGL_ABYSS_NONE);
+  
+  editor->NavigateToContent();
+  
+  // s_Test = Application_LoadRGBA32(data, testimageWidth, testimageHeight);
+  s_Test = FindNode(n_sink)->texture;
+  printf("node->texture %p\n", FindNode(n_sink)->texture);
+  
   BuildNodes();
 
   s_HeaderBackground = Application_LoadTexture("data/BlueprintBackground.png");
@@ -953,9 +1112,7 @@ void Application_Frame() {
 
   auto& io = ImGui::GetIO();
 
-  ImGui::Begin("Canvas");
-  ImGui::Image((void*)(intptr_t)s_Test, ImVec2(testimageWidth, testimageHeight));
-  ImGui::End();
+
   
   ImGui::Text("FPS: %.2f (%.2gms)", io.Framerate, io.Framerate ? 1000.0f / io.Framerate : 0.0f);
 
@@ -976,6 +1133,15 @@ void Application_Frame() {
 
   ImGui::SameLine(0.0f, 12.0f);
 
+  for (auto& node : s_Nodes) { //@todo figure out how to put this in the s_Nodes loop below
+			       //probabl something to do with editor->begin is fucking it up (not showing)
+  if (node.kind == node_kind::CANVAS) {
+    ImGui::Begin("Canvas");
+    ImGui::Image((void*)(intptr_t)node.texture, node.size);
+    ImGui::End();
+  }
+  }
+  
   editor->Begin("Node editor");
   {
     auto cursorTopLeft = ImGui::GetCursorScreenPos();
@@ -987,6 +1153,7 @@ void Application_Frame() {
       if (node.Type != NodeStyle::Blueprint && node.Type != NodeStyle::Simple) {
 	continue;
       }
+
 
       const bool isSimple = node.Type == NodeStyle::Simple;      
 
