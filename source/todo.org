@@ -1,5 +1,15 @@
+* 2021-06-16
+create hb display node
+
+better context menu
+
+is BuildNodes necessary?
+
+
 * application has to be launched from directory the exe is in
 stbi_load tries to load files from the wrong place otherwise
 
 * Imgui::IsItemHovered not working on nodes.* 
  
+* fix objectid situation
+I have no idea how it work, the tripply nested templates
