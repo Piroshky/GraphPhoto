@@ -141,8 +141,7 @@ void util::BlueprintNodeBuilder::BeginInputPad(ed::PinId id) {
   ImGui::BeginHorizontal(id.AsPointer());
 }
 
-void util::BlueprintNodeBuilder::Middle()
-{
+void util::BlueprintNodeBuilder::Middle() {
   if (CurrentStage == Stage::Begin)
     SetStage(Stage::Content);
 

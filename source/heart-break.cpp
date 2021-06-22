@@ -3,6 +3,7 @@
 #include "utilities/widgets.h"
 #include <imgui_node_editor.h>
 #include <gegl.h>
+#include <gegl-plugin.h>
 
 
 #define IMGUI_DEFINE_MATH_OPERATORS
@@ -33,6 +34,41 @@ using ax::Widgets::IconType;
 
 static ed::EditorContext* editor = nullptr;
 GeglNode *graph;
+GHashTable *categories_ht = NULL;
+
+
+struct gegl_name_title_pair {
+  char *name;
+  char *title;
+};
+
+// gets a list of the operations
+static GList * gegl_operations_build(GList *list, GType type) {
+  GeglOperationClass *klass;
+  GType *ops;
+  guint  children;
+  gint   no;
+
+  if (!type) {
+    return list;
+  }
+
+  klass = (GeglOperationClass*)g_type_class_ref (type);
+  if (klass->name != NULL)  {
+    list = g_list_prepend (list, klass);
+  }
+
+  ops = g_type_children (type, &children);
+
+  for (no=0; no<children; no++)
+  {
+    list = gegl_operations_build (list, ops[no]);
+  }
+  if (ops)
+    g_free (ops);
+  return list;
+}
+
 
 //extern "C" __declspec(dllimport) short __stdcall GetAsyncKeyState(int vkey);
 //extern "C" bool Debug_KeyPress(int vkey)
@@ -87,10 +123,16 @@ struct Pin {
   PinType         Type;
   PinDirection        Kind;
   std::vector<LinkId> links;
+  void *value;  
 
-  Pin(int id, int nid, const char* name, PinType type):
-    ID(id), node_id(nid), Name(name), Type(type), Kind(PinDirection::INPUT)
+  Pin(int id, int nid, const char* name):
+    ID(id), node_id(nid), Name(name), Kind(PinDirection::INPUT), value(nullptr)
   {}
+  
+  Pin(int id, int nid, const char* name, PinType type):
+    ID(id), node_id(nid), Name(name), Kind(PinDirection::INPUT), value(nullptr), Type(type)
+  {}
+  
 };
 
 struct Link {
@@ -219,8 +261,13 @@ static Pin* FindPin(PinId id) {
 
 void delete_link(LinkId link_id) {
   Link *link = FindLink(link_id);
-  
-  if (link == nullptr) {printf("null link\n");}
+   
+  if (link == nullptr) {
+    printf("ERROR: tried to delte null link\n");
+    return;
+  }
+
+  printf("Deleting link %d\n", link_id.Get());
   
   Pin *start = FindPin(link->StartPinID);
   Pin *end   = FindPin(link->EndPinID);
@@ -235,8 +282,36 @@ void delete_link(LinkId link_id) {
 		    [link_id](auto& link) { return link == link_id; });
   if (id != end->links.end()) {
     end->links.erase(id);
-  } 
-  editor->DeleteLink(link_id);
+  }
+
+  Node *start_node = FindNode(start->node_id);
+  Node *end_node   = FindNode(end->node_id);
+
+  if (start_node == nullptr) {
+    fprintf(stderr, "Error: when deleteing link. The start node is null.\n");
+  }
+
+  if (end_node == nullptr) {
+    fprintf(stderr, "Error: when deleteing link. The end node was null.\n");
+  }
+
+  bool delete_gegl_node = true;
+  if (start_node->gegl_node == nullptr) {
+    fprintf(stderr, "Error: when deleteing link. The start node, `%s`, has a null gegl_node\n", start_node->Name.c_str());
+    delete_gegl_node = false;
+  }
+
+  if (end_node->gegl_node == nullptr) {
+    fprintf(stderr, "Error: when deleteing link. The end node, `%s`, has a null gegl_node\n", end_node->Name.c_str());
+    delete_gegl_node = false;
+  }
+
+  //@Todo gegl might just auto matically delete a node if you connect a new input...
+  // yes it does see gegl_node_connect_from (GeglNode    *sink,
+  // if (delete_gegl_node) {
+  //   printf("disconnecting gegl nodes\n");
+  //   gegl_node_disconnect(end_node->gegl_node, end->Name.c_str());
+  // }  
 }
 
 // bool link_gegl(GeglNode *source, GeglNode *sink) {
@@ -298,27 +373,29 @@ void create_link(PinId startPinId, PinId endPinId) {
     printf("sink not gegl node\n");
   } 
   
-  printf("trying to connect %s %s to %s %s, (NodeId %ld to %ld), (Pointer %p )\n",
+  printf("trying to connect %s %s to %s %s, (NodeId %ld to %ld), (Pointer %p)\n",
 	 start_node->Name.c_str(), start->Name.c_str(),
 	 end_node->Name.c_str(),   end->Name.c_str(),
 	 start_node->ID.Get(),     end_node->ID.Get()), start_node;
   
-  
+  start->links.emplace_back(new_link);
+  if (!end->links.empty()) {
+    printf ("end pin not empty\n");
+    if (end->links.size() != 1) {
+      printf("ERROR: end pin had more than one link\n");
+    }
+    for (LinkId link_id : end->links) {
+      editor->DeleteLink(link_id);
+    }
+  }
+  end->links.clear();
+  end->links.emplace_back(new_link);
+
   if (!gegl_node_connect_to(gegl_source, start->Name.c_str(),
 	                    gegl_sink,   end->Name.c_str())) {
     fprintf(stderr, "error: could not connect gegl nodes\n");
     exit(1);
   }
-  
-  start->links.emplace_back(new_link);
-  if (!end->links.empty()) {
-    printf ("end pin not empty\n");
-    for (LinkId link_id : end->links) {
-      delete_link(link_id);
-    }
-  }
-  end->links.clear();
-  end->links.emplace_back(new_link);
 }
 
 
@@ -361,8 +438,13 @@ void BuildNodes() {
   }
 }
 
-#include "prebuilt_create_node.inl"
-#include "heartbreak_menu.inl"
+// #include "heartbreak_menu.inl"
+
+// NodeId node_menu(PinId id) {
+//   for (auto category : categories) {
+//     //  collect in category nodes that take input/output of same type of id-
+//   }
+// }
 
 // backup
 // // creates a ui node and sets its gegl_node member to the appropriate gegl node
@@ -414,34 +496,45 @@ NodeId create_gegl_node(char *name) {
     guint        n_properties;
     GParamSpec **properties = gegl_operation_list_properties (name, &n_properties);
     for (int i = 0; i < n_properties; i++) {
+            
       const gchar  *property_name;
+      const gchar  *property_nickname;
       const GValue *property_default;
       gchar        *property_blurb;
       gchar        *default_string = NULL;
       PinType pintype;
 
+      property_nickname = g_param_spec_get_nick (properties[i]);
       property_name = g_param_spec_get_name (properties[i]);
       property_default = g_param_spec_get_default_value (properties[i]);
+
+      Pin new_pin = Pin(GetNextId(), nid, property_nickname);
+      
       //@Todo set node defaults by gegl default
       switch (G_VALUE_TYPE (property_default))
       {
       case G_TYPE_DOUBLE:
-	pintype = PinType::DOUBLE;
+	new_pin.Type = PinType::DOUBLE;
 	/* default_string = g_strdup_printf (" (default: %f)", */
 	/* 					g_value_get_double (property_default)); */
 	break;
       case G_TYPE_STRING:
-	pintype = PinType::STRING;
+	new_pin.Type = PinType::STRING;
+	new_pin.value = malloc(sizeof(char) * 1000);
+	for (int i = 0; i < 1000; ++i) {
+	  ((char*)new_pin.value)[i] = '\0';
+	}
+	strncpy((char *)new_pin.value, g_value_get_string(property_default), 1000);
 	/* default_string = g_strdup_printf (" (default: \"%s\")", */
 	/* 					g_value_get_string (property_default)); */
 	break;
       case G_TYPE_INT:
-	pintype = PinType::INT;
+	new_pin.Type = PinType::INT;
 	/* default_string = g_strdup_printf (" (default: %d)", */
 	/* 					g_value_get_int (property_default)); */
 	break;
       case G_TYPE_BOOLEAN:
-	pintype = PinType::BOOLEAN;
+	new_pin.Type = PinType::BOOLEAN;
 	/* default_string = g_strdup_printf (" (default: %s)", */
 	/* 					g_value_get_boolean (property_default)? */
 	/* 					"TRUE" : "FALSE"); */
@@ -460,7 +553,9 @@ NodeId create_gegl_node(char *name) {
       /* 				  NULL); */
       /* g_free (property_blurb); */
       /* g_free (default_string); */
-      node->Inputs.emplace_back(GetNextId(), nid, property_name, pintype);
+      
+      
+      node->Inputs.emplace_back(new_pin);
     }
   }
   
@@ -496,6 +591,7 @@ NodeId create_hb_canvas_node() {
   Node *node = &s_Nodes.back();
   node->Inputs.emplace_back(GetNextId(), nid, "input", PinType::GEGL_BUFFER);
   node->Name = "Canvas";
+  node->kind = node_kind::CANVAS;
   GeglNode *sink = gegl_node_new_child(graph,
 				       "operation", "gegl:buffer-sink",
 				       "buffer",    &(node->gegl_buffer), NULL);
@@ -505,18 +601,31 @@ NodeId create_hb_canvas_node() {
 }
 
 void hb_canvas_node_process(NodeId node_id) {
+  printf("------------------\n");
+  printf("--- hb_canvas_node_process\n");  
   Node *node = FindNode(node_id);
-  node->kind = node_kind::CANVAS;
-  printf("reassigning buffer\n");
-  printf("hb node->gegl_node %p\n", node->gegl_node);
+  if (node == nullptr) {
+    printf("ERROR: did not find canvas node\n");
+    return;
+  }
+  printf("--- reassigning buffer\n");
+  printf("--- hb node->gegl_node %p\n", node->gegl_node);
+  void *buf;
+  gegl_node_get(node->gegl_node, "buffer", &buf, NULL);
+  printf("--- buffer before %p\n", buf);
   gegl_node_set(node->gegl_node, "buffer", &(node->gegl_buffer), NULL);
-  printf("reassigned buffer\n");
+  gegl_node_get(node->gegl_node, "buffer", &buf, NULL);
+  printf("--- buffer after %p\n", buf);
+  printf("--- reassigned buffer\n");
   gegl_node_process(node->gegl_node);
+  printf("--- getting height, width\n");
   int h = gegl_buffer_get_height(node->gegl_buffer);
   int w = gegl_buffer_get_width(node->gegl_buffer);
   node->size = ImVec2(w, h);
+  printf("--- new size (w: %d, h: %d)\n", w, h);
   int pixels = gegl_buffer_get_pixel_count(node->gegl_buffer);
   node->image_data = malloc(pixels * 4 * sizeof(char));
+  printf("--- malloc'd %d pixels at %p\n", pixels, node->image_data);
   gegl_buffer_get(node->gegl_buffer,
 		  NULL,
 		  1.0,
@@ -526,6 +635,7 @@ void hb_canvas_node_process(NodeId node_id) {
   node->texture = Application_LoadRGBA32(node->image_data, w, h);
   printf("node->texture %p\n", node->texture);
   printf("h: %d, w: %d, count: %d\n", h, w, pixels);
+  printf("------------------\n\n");
 }
 
 // void update_hb_canvas_node(NodeId id) {
@@ -573,10 +683,69 @@ void Application_Initialize() {
   editor = CreateEditor(&config);
 
   gegl_init(nullptr, nullptr);
-  graph = gegl_node_new ();
   g_object_set (gegl_config (),
 		"application-license", "GPL3",
 		NULL);
+
+  // Build the list of category->operations mapping
+  GList *operations = NULL;
+  
+  
+  operations = gegl_operations_build(NULL, GEGL_TYPE_OPERATION);
+  categories_ht = g_hash_table_new_full (g_str_hash, g_str_equal, NULL, NULL);
+
+  for (GList *iter=operations; iter; iter = g_list_next(iter)) {
+    GeglOperationClass *klass = (GeglOperationClass*)iter->data;
+    const char *title         = NULL;
+    const char *name          = NULL;
+    const char *categories    = NULL;
+    title = gegl_operation_class_get_key(klass, "title");
+    name  = gegl_operation_class_get_key(klass, "name");
+    if (title == NULL) {
+      title = name;
+    }
+
+    categories = gegl_operation_class_get_key(klass, "categories");
+    
+    const char * ptr = categories;
+    while (ptr && *ptr) {
+      gchar category[64]="";
+      gint i=0;
+      while (*ptr && *ptr!=':' && i<63) {
+	category[i++]=*(ptr++);
+	category[i]='\0';
+      }
+      if (*ptr==':') {ptr++;}
+
+      GPtrArray *category_ops = (GPtrArray*)g_hash_table_lookup(categories_ht, (void*)g_intern_string(category));
+      if (category_ops == NULL) {
+	category_ops = g_ptr_array_new();
+	g_ptr_array_add(category_ops, (void*)g_intern_string(name));
+	g_ptr_array_add(category_ops, (void*)g_intern_string(title));
+	g_hash_table_insert (categories_ht,
+			     (void*)g_intern_string(category), (void*)category_ops);
+      } else {
+	g_ptr_array_add(category_ops, (void*)g_intern_string(name));
+	g_ptr_array_add(category_ops, (void*)g_intern_string(title));
+      }           
+    }
+  }
+
+  GHashTableIter iter;
+  char *category;
+  GPtrArray *ops;
+  g_hash_table_iter_init(&iter, categories_ht);
+  while(g_hash_table_iter_next(&iter, (void**)&category, (void**)&ops)) {
+    printf("%s\n", category);
+    for(int i = 0; i < ops->len; i += 2) {
+      char * op_name  = (char *)g_ptr_array_index(ops, i);
+      char * op_title = (char *)g_ptr_array_index(ops, i+1);
+      printf("    %s   ~~aka~~ %s\n", op_name, op_title);
+    }    
+  }
+  
+  graph = gegl_node_new ();
+
 
   // // //
     
@@ -615,16 +784,10 @@ void Application_Initialize() {
 
   create_link(FindNode(n_load)->Outputs[0].ID, FindNode(n_edge)->Inputs[0].ID);
   create_link(FindNode(n_edge)->Outputs[0].ID, FindNode(n_over)->Inputs[1].ID);
-  create_link(FindNode(n_over)->Outputs[0].ID, FindNode(n_sink)->Inputs[0].ID);
   create_link(FindNode(n_text)->Outputs[0].ID, FindNode(n_over)->Inputs[0].ID);
-  // gegl_node_connect_to(load, "output",  edge, "input");
-  // gegl_node_connect_to(edge, "output",  over, "input");
-  // gegl_node_connect_to(over, "output",  sink, "input");
-  // gegl_node_connect_to(text, "output",  over, "aux");
-  // gegl_node_process(sink);
-  printf("here\n");
+  create_link(FindNode(n_over)->Outputs[0].ID, FindNode(n_sink)->Inputs[0].ID);
+  
   hb_canvas_node_process(n_sink);
-  printf("processed canvas\n");
   
   // testimageHeight = gegl_buffer_get_height(buffer);
   // testimageWidth  = gegl_buffer_get_width(buffer);
@@ -965,7 +1128,63 @@ void ShowLeftPane(float paneWidth) {
   if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Z)))
     for (auto& link : s_Links)
       editor->Flow(link.ID);
+  
+  
+  if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_A)) &&
+      nodeCount == 1) {
+    printf("--- updating node ?\n");
+    Node* selected = FindNode(selectedNodes[0]);
+    if (selected->kind == node_kind::CANVAS) {
+      hb_canvas_node_process(selected->ID);
+      printf("updating canvas\n");
+    } else {
+      printf("--- no update, not a canvas\n");
+    }
+    printf("------------------\n\n");
+  }
+  
+  if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_V)) &&
+      nodeCount == 1) {
+    Node* node = FindNode(selectedNodes[0]);
+    if (node != nullptr) {
+      printf("------------------\n");
+      printf("--- Info for Node `%s`\n",node->Name.c_str());
+      printf("--- Input Pads:\n");
+      for (Pin out : node->Inputs) {
+	if (out.links.size() > 1) {
+	  printf("--- `%s` has multiple links!\n", out.Name.c_str());
+	}
+	for (LinkId lid : out.links) {
+	  Link *link = FindLink(lid);
+	  Pin *in = FindPin(link->StartPinID);
+	  printf("--- `%s`  <--  `%s`\n", out.Name.c_str(), in->Name.c_str());
+	}
+      }
+      printf("---\n");
+      printf("--- Output Pads:\n");
+      for (Pin out : node->Outputs) {
+	for (LinkId lid : out.links) {
+	  Link *link = FindLink(lid);
+	  Pin *in = FindPin(link->EndPinID);
+	  printf("--- `%s`  -->  `%s`\n", out.Name.c_str(), in->Name.c_str());
+	}
+      }
+      printf("---\n");
+      GeglNode *gegl_node = node->gegl_node;
+      printf("--- Gegl Node : (%s)\n", (gegl_node) ? "present" : "missing" );
+      GeglNode *producer = gegl_node_get_producer(node->gegl_node, "input", NULL);
+      if (producer) {
+	char *name;
+	gegl_node_get(producer, "operation", &name, NULL);
+	printf("--- producer: %s\n", name);
+      } else {
+	printf("--- NULL\n");
+      }
+      printf("------------------\n\n");
 
+    }
+  }
+  
   // move selection around
   if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_RightArrow))) {
     if (nodeCount == 1 && linkCount == 0) {
@@ -1154,7 +1373,6 @@ void Application_Frame() {
 	continue;
       }
 
-
       const bool isSimple = node.Type == NodeStyle::Simple;      
 
       builder.Begin(node.ID);
@@ -1182,9 +1400,20 @@ void Application_Frame() {
 	  ImGui::TextUnformatted(input.Name.c_str());
 	  ImGui::Spring(0);
 	}
+        
 	if (input.Type == PinType::BOOLEAN) {
-	  ImGui::Button("Hello");
-	  ImGui::Spring(0);
+	  ImGui::Checkbox("boolean", (bool *)&input.value);          
+	  // ImGui::Spring(0);
+	} else if (input.Type == PinType::INT) {
+	  ImGui::DragInt("", (int *)&input.value, 0.2f, 1, 100);
+	  // ImGui::Spring(0);
+	} else if (input.Type == PinType::DOUBLE) {
+	  ImGui::DragFloat("", (float *)&input.value, 0.2f, 1, 100);
+	  // ImGui::Spring(0);
+	} else if (input.Type == PinType::STRING) {
+	  ImGui::PushItemWidth(80);
+	  ImGui::InputText("Input", (char *)input.value, 250);
+	  // ImGui::Spring(0);
 	}
 	ImGui::PopStyleVar();
 	builder.EndPad();
@@ -1247,9 +1476,11 @@ void Application_Frame() {
     // draw links
     for (auto& link : s_Links)
       editor->LLink(link.ID, link.StartPinID, link.EndPinID, link.Color, 2.0f);
-    
+
+    // runs while being dragged
     if (!createNewNode) {
       if (editor->BeginCreate(ImColor(255, 255, 255), 2.0f)) {
+
 	auto showLabel = [](const char* label, ImColor color)
 	{
 	  ImGui::SetCursorPosY(ImGui::GetCursorPosY() - ImGui::GetTextLineHeight());
@@ -1384,6 +1615,7 @@ void Application_Frame() {
   editor->Suspend();
   ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 8));
   if (ImGui::BeginPopup("Node Context Menu")) {
+    printf("goin\n");
     auto node = FindNode(contextNodeId);
 
     ImGui::TextUnformatted("Node Context Menu");
@@ -1447,10 +1679,31 @@ void Application_Frame() {
     //drawList->AddCircleFilled(ImGui::GetMousePosOnOpeningCurrentPopup(), 10.0f, 0xFFFF00FF);
 
     Node* node = nullptr;
+    NodeId node_id;
+    // node = FindNode(show_all_category_menus());
 
-    node = FindNode(show_all_category_menus());
+    GHashTableIter iter;
+    char *category;
+    GPtrArray *ops;
+    g_hash_table_iter_init(&iter, categories_ht);
+    while (g_hash_table_iter_next(&iter, (void**)&category, (void**)&ops)) {
+      if (ImGui::BeginMenu(category)) {
+      
+	for (int i = 0; i < ops->len; i += 2) {
+	  char * op_name  = (char *)g_ptr_array_index(ops, i);
+	  char * op_title = (char *)g_ptr_array_index(ops, i+1);
+	  if (ImGui::MenuItem(op_title)) {	    
+	    node_id = create_gegl_node(op_name);
+	  }
+	}
+	ImGui::EndMenu();
+      }
+    }
 
-    if (node) {
+    
+    
+    if (node_id.Get() != 0) {
+      node = FindNode(node_id);
       BuildNodes();
 
       createNewNode = false;

@@ -632,8 +632,7 @@ void EditorContext::PinRect(const ImVec2& a, const ImVec2& b) {
 //   m_NodeBuilder.PinPivotAlignment(alignment);
 // }
 
-void EditorContext::EndPin()
-{
+void EditorContext::EndPin() {
   m_NodeBuilder.EndPin();
 }
 
@@ -690,13 +689,9 @@ void EditorContext::Flow(LinkId linkId) {
     Flow(link);
 }
 
-bool EditorContext::BeginCreate(const ImVec4& color, float thickness)
-{
-  auto& context = GetItemCreator();
-
-  if (context.Begin())
-  {
-    context.SetStyle(ImColor(color), thickness);
+bool EditorContext::BeginCreate(const ImVec4& color, float thickness) {
+  if (m_CreateItemAction.Begin()) {
+    m_CreateItemAction.SetStyle(ImColor(color), thickness);
     return true;
   }
   else
@@ -708,7 +703,7 @@ bool EditorContext::QueryNewLink(PinId* startId, PinId* endId)
 {
   using Result = CreateItemAction::Result;
 
-  auto& context = GetItemCreator();
+  auto& context = m_CreateItemAction;
 
   return context.QueryLink(startId, endId) == Result::TRUE;
 }
@@ -717,7 +712,7 @@ bool EditorContext::QueryNewLink(PinId* startId, PinId* endId, const ImVec4& col
 {
   using Result = CreateItemAction::Result;
 
-  auto& context = GetItemCreator();
+  auto& context = m_CreateItemAction;
 
   auto result = context.QueryLink(startId, endId);
   if (result != Result::INDETERMINATE)
@@ -730,7 +725,7 @@ bool EditorContext::QueryNewNode(PinId* pinId)
 {
   using Result = CreateItemAction::Result;
 
-  auto& context = GetItemCreator();
+  auto& context = m_CreateItemAction;
 
   return context.QueryNode(pinId) == Result::TRUE;
 }
@@ -738,7 +733,7 @@ bool EditorContext::QueryNewNode(PinId* pinId)
 bool EditorContext::QueryNewNode(PinId* pinId, const ImVec4& color, float thickness) {
   using Result = CreateItemAction::Result;
 
-  auto& context = GetItemCreator();
+  auto& context = m_CreateItemAction;
 
   auto result = context.QueryNode(pinId);
   if (result != Result::INDETERMINATE)
@@ -750,7 +745,7 @@ bool EditorContext::QueryNewNode(PinId* pinId, const ImVec4& color, float thickn
 bool EditorContext::AcceptNewItem() {
   using Result = CreateItemAction::Result;
 
-  auto& context = GetItemCreator();
+  auto& context = m_CreateItemAction;
 
   return context.AcceptItem() == Result::TRUE;
 }
@@ -758,7 +753,7 @@ bool EditorContext::AcceptNewItem() {
 bool EditorContext::AcceptNewItem(const ImVec4& color, float thickness) {
   using Result = CreateItemAction::Result;
 
-  auto& context = GetItemCreator();
+  auto& context = m_CreateItemAction;
 
   auto result = context.AcceptItem();
   if (result != Result::INDETERMINATE)
@@ -768,24 +763,20 @@ bool EditorContext::AcceptNewItem(const ImVec4& color, float thickness) {
 }
 
 void EditorContext::RejectNewItem() {
-  auto& context = GetItemCreator();
-
-  context.RejectItem();
+  m_CreateItemAction.RejectItem();
 }
 
 void EditorContext::RejectNewItem(const ImVec4& color, float thickness) {
   using Result = CreateItemAction::Result;
 
-  auto& context = GetItemCreator();
+  auto& context = m_CreateItemAction;
 
   if (context.RejectItem() != Result::INDETERMINATE)
     context.SetStyle(ImColor(color), thickness);
 }
 
 void EditorContext::EndCreate() {
-  auto& context = GetItemCreator();
-
-  context.End();
+  m_CreateItemAction.End();
 }
 
 bool EditorContext::BeginDelete() {
@@ -1169,8 +1160,7 @@ void NodeBuilder::End()
   m_CurrentNode = nullptr;
 }
 
-void NodeBuilder::BeginPin(PinId pinId, PinDirection kind)
-{
+void NodeBuilder::BeginPin(PinId pinId, PinDirection kind) {
   IM_ASSERT(nullptr != m_CurrentNode);
   IM_ASSERT(nullptr == m_CurrentPin);
   IM_ASSERT(false   == m_IsGroup);
@@ -1210,8 +1200,7 @@ void NodeBuilder::BeginPin(PinId pinId, PinDirection kind)
   ImGui::BeginGroup();
 }
 
-void NodeBuilder::EndPin()
-{
+void NodeBuilder::EndPin() {
   IM_ASSERT(nullptr != m_CurrentPin);
 
   if (auto drawList = ImGui::GetWindowDrawList())
@@ -1343,10 +1332,8 @@ EditorContext::~EditorContext() {
   m_Splitter.ClearFreeMemory();
 }
 
-void EditorContext::Begin(const char* id, const ImVec2& size)
-{
-  if (!m_IsInitialized)
-  {
+void EditorContext::Begin(const char* id, const ImVec2& size) {
+  if (!m_IsInitialized) { //@todo just do this when we initialize the node editor
     LoadSettings();
     m_IsInitialized = true;
   }
@@ -2609,8 +2596,8 @@ Link* EditorContext::GetLink(LinkId id)
         return CreateLink(id);
 }
 
-void EditorContext::LoadSettings()
-{
+void EditorContext::LoadSettings() {
+  printf("loading settings\n");
     Settings::Parse(m_Config.Load(), m_Settings);
 
     m_NavigateAction.m_Scroll = m_Settings.m_ViewScroll;
@@ -2704,8 +2691,7 @@ void EditorContext::UpdateAnimations()
     }
 }
 
-void EditorContext::Flow(Link* link)
-{
+void EditorContext::Flow(Link* link) {
     m_FlowAnimationController.Flow(link);
 }
 
@@ -4973,8 +4959,7 @@ void CreateItemAction::SetStyle(ImU32 color, float thickness)
     m_LinkThickness = thickness;
 }
 
-bool CreateItemAction::Begin()
-{
+bool CreateItemAction::Begin() {
     IM_ASSERT(false == m_InActive);
 
     m_InActive        = true;
@@ -5010,23 +4995,19 @@ void CreateItemAction::End()
     m_InActive = false;
 }
 
-void CreateItemAction::DragStart(Pin* startPin)
-{
+void CreateItemAction::DragStart(Pin* startPin) {
     IM_ASSERT(!m_InActive);
     m_NextStage = Possible;
     m_LinkStart = startPin;
     m_LinkEnd   = nullptr;
 }
 
-void CreateItemAction::DragEnd()
-{
+void CreateItemAction::DragEnd() {
     IM_ASSERT(!m_InActive);
-    if (m_CurrentStage == Possible && m_UserAction == UserAccept)
-    {
+    if (m_CurrentStage == Possible && m_UserAction == UserAccept) {
         m_NextStage = Create;
     }
-    else
-    {
+    else {
         m_NextStage = None;
         m_ItemType  = NoItem;
         m_LinkStart = nullptr;
@@ -5034,8 +5015,7 @@ void CreateItemAction::DragEnd()
     }
 }
 
-void CreateItemAction::DropPin(Pin* endPin)
-{
+void CreateItemAction::DropPin(Pin* endPin) {
     IM_ASSERT(!m_InActive);
 
     m_ItemType = Link;
@@ -5070,8 +5050,7 @@ CreateItemAction::Result CreateItemAction::RejectItem()
     return TRUE;
 }
 
-CreateItemAction::Result CreateItemAction::AcceptItem()
-{
+CreateItemAction::Result CreateItemAction::AcceptItem() {
     IM_ASSERT(m_InActive);
 
     if (!m_InActive || m_CurrentStage == None || m_ItemType == NoItem)
@@ -5079,8 +5058,7 @@ CreateItemAction::Result CreateItemAction::AcceptItem()
 
     m_UserAction = UserAccept;
 
-    if (m_CurrentStage == Create)
-    {
+    if (m_CurrentStage == Create) {
         m_NextStage = None;
         m_ItemType  = NoItem;
         m_LinkStart = nullptr;

@@ -1645,8 +1645,6 @@ struct EditorContext {
 
   EditorAction* GetCurrentAction() { return m_CurrentAction; }
 
-
-  CreateItemAction& GetItemCreator() { return m_CreateItemAction; }
   DeleteItemsAction& GetItemDeleter() { return m_DeleteItemsAction; }
   ContextMenuAction& GetContextMenu() { return m_ContextMenuAction; }
   ShortcutAction& GetShortcut() { return m_ShortcutAction; }

@@ -1,15 +1,25 @@
-* 2021-06-16
-create hb display node
+* Main Todo
+processing gegl nodes on graph change
+
+displaying property values
 
 better context menu
 
 is BuildNodes necessary?
 
+is Flow(link *) in editor context necessary?
+
+
+* Rough spot : infinite buffers
+checkerboard, fractal require a crop to be put on them
+https://gitlab.gnome.org/GNOME/gegl/-/issues/281
+
 
 * application has to be launched from directory the exe is in
 stbi_load tries to load files from the wrong place otherwise
 
-* Imgui::IsItemHovered not working on nodes.* 
+
+* Imgui::IsItemHovered not working on nodes.
  
 * fix objectid situation
 I have no idea how it work, the tripply nested templates
