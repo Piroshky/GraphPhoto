@@ -513,8 +513,7 @@ struct Link final: Object {
 
   
 //------------------------------------------------------------------------------
-enum class SaveReasonFlags: uint32_t
-{
+enum class SaveReasonFlags: uint32_t {
     None       = 0x00000000,
     Navigation = 0x00000001,
     Position   = 0x00000002,
@@ -1644,6 +1643,7 @@ struct EditorContext {
   bool BeginCreate(const ImVec4& color, float thickness);
 
   EditorAction* GetCurrentAction() { return m_CurrentAction; }
+  PinId GetDraggedPin();
 
   DeleteItemsAction& GetItemDeleter() { return m_DeleteItemsAction; }
   ContextMenuAction& GetContextMenu() { return m_ContextMenuAction; }

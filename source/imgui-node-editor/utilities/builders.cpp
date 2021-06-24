@@ -122,7 +122,8 @@ void util::BlueprintNodeBuilder::BeginOutputPad(ed::PinId id) {
 
   ed::GetEditor()->BeginPin(id, PinDirection::OUTPUT);
 
-  ImGui::BeginHorizontal(id.AsPointer());
+  // ImGui::BeginHorizontal(id.AsPointer());
+  ImGui::BeginVertical(id.AsPointer());
 }
 
 void util::BlueprintNodeBuilder::BeginInputPad(ed::PinId id) {
@@ -133,12 +134,14 @@ void util::BlueprintNodeBuilder::BeginInputPad(ed::PinId id) {
 
   SetStage(Stage::Input);
 
-  if (applyPadding)
+  if (applyPadding) {
     ImGui::Spring(0);
+  }
 
   ed::GetEditor()->BeginPin(id, PinDirection::INPUT);
 
-  ImGui::BeginHorizontal(id.AsPointer());
+  // ImGui::BeginHorizontal(id.AsPointer());
+  ImGui::BeginVertical(id.AsPointer());
 }
 
 void util::BlueprintNodeBuilder::Middle() {
@@ -149,12 +152,12 @@ void util::BlueprintNodeBuilder::Middle() {
 }
 
 void util::BlueprintNodeBuilder::EndPad() {
-    ImGui::EndHorizontal();
+    // ImGui::EndHorizontal();
+    ImGui::EndVertical();
     ed::GetEditor()->EndPin();
 }
 
-bool util::BlueprintNodeBuilder::SetStage(Stage stage)
-{
+bool util::BlueprintNodeBuilder::SetStage(Stage stage) {
     if (stage == CurrentStage)
         return false;
 

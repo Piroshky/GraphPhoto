@@ -46,55 +46,7 @@ static int BuildIdList(C& container, I* list, int listSize, F&& accept)
     return static_cast<int>(std::count_if(container.begin(), container.end(), accept));
 }
 
-// https://stackoverflow.com/a/8597498
-# define DECLARE_HAS_NESTED(Name, Member)                                          \
-                                                                                   \
-  template<class T>							\
-  struct has_nested_ ## Name						\
-  {									\
-    typedef char yes;							\
-    typedef yes(&no)[2];						\
-                                                                                   \
-    template<class U> static yes test(decltype(U::Member)*);		\
-    template<class U> static no  test(...);				\
-                                                                                   \
-        static bool const value = sizeof(test<T>(0)) == sizeof(yes);               \
-    };
-
 namespace NodeEditor {
-
-# define DECLARE_KEY_TESTER(Key)                                                                    \
-    DECLARE_HAS_NESTED(Key, Key)                                                                    \
-    struct KeyTester_ ## Key                                                                        \
-    {                                                                                               \
-        template <typename T>                                                                       \
-        static int Get(typename std::enable_if<has_nested_ ## Key<ImGuiKey_>::value, T>::type*)     \
-        {                                                                                           \
-            return ImGui::GetKeyIndex(T::Key);                                                      \
-        }                                                                                           \
-                                                                                                    \
-        template <typename T>                                                                       \
-        static int Get(typename std::enable_if<!has_nested_ ## Key<ImGuiKey_>::value, T>::type*)    \
-        {                                                                                           \
-            return -1;                                                                              \
-        }                                                                                           \
-    }
-
-DECLARE_KEY_TESTER(ImGuiKey_F);
-DECLARE_KEY_TESTER(ImGuiKey_D);
-
-static inline int GetKeyIndexForF()
-{
-    return KeyTester_ImGuiKey_F::Get<ImGuiKey_>(nullptr);
-}
-
-static inline int GetKeyIndexForD()
-{
-    return KeyTester_ImGuiKey_D::Get<ImGuiKey_>(nullptr);
-}
-
-
-
 
 //------------------------------------------------------------------------------
 static const int c_BackgroundChannelCount = 1;
@@ -698,14 +650,11 @@ bool EditorContext::BeginCreate(const ImVec4& color, float thickness) {
     return false;
 }
 
-// I think this is supposed to figure out if a link between these nodes is okay
-bool EditorContext::QueryNewLink(PinId* startId, PinId* endId)
-{
+// If there is a new link then set these pointers to the right IDs
+bool EditorContext::QueryNewLink(PinId* startId, PinId* endId) {
   using Result = CreateItemAction::Result;
 
-  auto& context = m_CreateItemAction;
-
-  return context.QueryLink(startId, endId) == Result::TRUE;
+  return m_CreateItemAction.QueryLink(startId, endId) == Result::TRUE;
 }
 
 bool EditorContext::QueryNewLink(PinId* startId, PinId* endId, const ImVec4& color, float thickness)
@@ -1023,6 +972,14 @@ Node* NodeEditor::EditorContext::GetNode(NodeId id)
   if (!node)
     node = CreateNode(id);
   return node;
+}
+
+PinId NodeEditor::EditorContext::GetDraggedPin() {
+  Pin *dragged = m_CreateItemAction.m_DraggedPin;
+  
+  if (!dragged)
+    return PinId(0);
+  return dragged->m_ID;
 }
 
 
@@ -1403,8 +1360,7 @@ void EditorContext::Begin(const char* id, const ImVec2& size) {
   m_LastSelectedObjects = m_SelectedObjects;
 }
 
-void EditorContext::End()
-{
+void EditorContext::End() {
   //auto& io          = ImGui::GetIO();
   auto  control     = BuildControl(m_CurrentAction && m_CurrentAction->IsDragging()); // NavigateAction.IsMovingOverEdge()
   auto  drawList    = ImGui::GetWindowDrawList();
@@ -1446,8 +1402,7 @@ void EditorContext::End()
 	selectedObject->Draw(drawList, Object::Selected);
   }
 
-  if (!isSelecting)
-  {
+  if (!isSelecting) {
     auto hoveredObject = control.HotObject;
     if (auto dragAction = m_CurrentAction ? m_CurrentAction->AsDrag() : nullptr)
       hoveredObject = dragAction->m_DraggedObject;
@@ -2636,13 +2591,11 @@ void EditorContext::SaveSettings()
     m_Config.EndSave();
 }
 
-void EditorContext::MakeDirty(SaveReasonFlags reason)
-{
+void EditorContext::MakeDirty(SaveReasonFlags reason) {
     m_Settings.MakeDirty(reason);
 }
 
-void EditorContext::MakeDirty(SaveReasonFlags reason, Node* node)
-{
+void EditorContext::MakeDirty(SaveReasonFlags reason, Node* node) {
     m_Settings.MakeDirty(reason, node);
 }
 
@@ -3316,7 +3269,7 @@ void Animation::Update()
 //------------------------------------------------------------------------------
 NavigateAnimation::NavigateAnimation(EditorContext* editor, NavigateAction& scrollAction):
     Animation(editor),
-    Action(scrollAction)
+    Action(scrollAction)    
 {
 }
 
@@ -3602,8 +3555,7 @@ NavigateAction::NavigateAction(EditorContext* e, ImGuiEx::Canvas& canvas):
   m_MoveOffset(0, 0)
 {}
 
-AcceptResult NavigateAction::Accept(const Control& control)
-{
+AcceptResult NavigateAction::Accept(const Control& control) {
     IM_ASSERT(!m_IsActive);
 
     if (m_IsActive)
@@ -3619,7 +3571,9 @@ AcceptResult NavigateAction::Accept(const Control& control)
 
     auto& io = ImGui::GetIO();
 
-    if (ImGui::IsWindowFocused() && ImGui::IsKeyPressed(GetKeyIndexForF()) && Editor->AreShortcutsEnabled())
+    if (ImGui::IsWindowFocused() &&
+	ImGui::IsKeyPressed((ImGui::GetKeyIndex(ImGuiKey_F))) &&
+	Editor->AreShortcutsEnabled())
     {
         const auto allowZoomIn = io.KeyShift;
 
@@ -3875,7 +3829,7 @@ void NavigateAction::SetViewRect(const ImRect& rect)
 {
     auto view = m_Canvas.CalcCenterView(rect);
     m_Scroll = -view.Origin;
-    m_Zoom   =  view.Scale;
+    m_Zoom   =  view.Scale;    
 }
 
 ImRect NavigateAction::GetViewRect() const
@@ -4627,7 +4581,7 @@ AcceptResult ShortcutAction::Accept(const Control& control)
         candidateAction = Copy;
     if (io.KeyCtrl && !io.KeyShift && !io.KeyAlt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_V)))
         candidateAction = Paste;
-    if (io.KeyCtrl && !io.KeyShift && !io.KeyAlt && ImGui::IsKeyPressed(GetKeyIndexForD()))
+    if (io.KeyCtrl && !io.KeyShift && !io.KeyAlt && ImGui::IsKeyPressed((ImGui::GetKeyIndex(ImGuiKey_D))))
         candidateAction = Duplicate;
     if (!io.KeyCtrl && !io.KeyShift && !io.KeyAlt && ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Space)))
         candidateAction = CreateNode;
@@ -4830,15 +4784,13 @@ CreateItemAction::CreateItemAction(EditorContext* editor):
     m_IsInGlobalSpace(false)
 {}
 
-AcceptResult CreateItemAction::Accept(const Control& control)
-{
+AcceptResult CreateItemAction::Accept(const Control& control) {
     IM_ASSERT(!m_IsActive);
 
     if (m_IsActive)
         return AcceptResult::FALSE;
 
-    if (control.ActivePin && ImGui::IsMouseDragging(0))
-    {
+    if (control.ActivePin && ImGui::IsMouseDragging(0)) {
         m_DraggedPin = control.ActivePin;
         DragStart(m_DraggedPin);
 
@@ -4897,8 +4849,7 @@ bool CreateItemAction::Process(const Control& control) {
     }
     else if (m_CurrentStage == Possible || !control.ActivePin)
     {
-        if (!ImGui::IsWindowHovered())
-        {
+        if (!ImGui::IsWindowHovered()) {
             m_DraggedPin = nullptr;
             DropNothing();
         }
@@ -5083,8 +5034,7 @@ CreateItemAction::Result CreateItemAction::QueryLink(PinId* startId, PinId* endI
 
     Editor->SetUserContext(true);
 
-    if (!m_IsInGlobalSpace)
-    {
+    if (!m_IsInGlobalSpace) {
         Editor->Suspend(SuspendFlags::KeepSplitter);
 
         auto rect = Editor->GetRect();

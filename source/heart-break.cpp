@@ -36,6 +36,23 @@ static ed::EditorContext* editor = nullptr;
 GeglNode *graph;
 GHashTable *categories_ht = NULL;
 
+void showLabel(const char* label, ImColor color) {
+  ImGui::SetCursorPosY(ImGui::GetCursorPosY() - ImGui::GetTextLineHeight());
+  auto size = ImGui::CalcTextSize(label);
+
+  auto padding = ImGui::GetStyle().FramePadding;
+  auto spacing = ImGui::GetStyle().ItemSpacing;
+
+  ImGui::SetCursorPos(ImGui::GetCursorPos() + ImVec2(spacing.x, -spacing.y));
+
+  auto rectMin = ImGui::GetCursorScreenPos() - padding;
+  auto rectMax = ImGui::GetCursorScreenPos() + size + padding;
+
+  auto drawList = ImGui::GetWindowDrawList();
+  drawList->AddRectFilled(rectMin, rectMax, color, size.y * 0.15f);
+  ImGui::TextUnformatted(label);
+};
+
 
 struct gegl_name_title_pair {
   char *name;
@@ -120,17 +137,25 @@ struct Pin {
   PinId        ID;
   NodeId       node_id;
   std::string     Name;
+  std::string     Title;
+  std::string     description;
   PinType         Type;
   PinDirection        Kind;
   std::vector<LinkId> links;
-  void *value;  
+  void *value;
+  int min;
+  int max;
 
-  Pin(int id, int nid, const char* name):
-    ID(id), node_id(nid), Name(name), Kind(PinDirection::INPUT), value(nullptr)
+  double valued;
+  double mind;
+  double maxd;
+
+  Pin(int id, int nid, const char* name, const char* title):
+    ID(id), node_id(nid), Name(name), Title(title), Kind(PinDirection::INPUT), value(nullptr)
   {}
   
   Pin(int id, int nid, const char* name, PinType type):
-    ID(id), node_id(nid), Name(name), Kind(PinDirection::INPUT), value(nullptr), Type(type)
+    ID(id), node_id(nid), Name(name), Title(name), Kind(PinDirection::INPUT), value(nullptr), Type(type)
   {}
   
 };
@@ -163,6 +188,8 @@ struct Node {
   void        *image_data;  
   ImTextureID  texture;
   ImVec2       size;
+
+  bool propogate_update = false;
   
   std::string State;
   std::string SavedState;
@@ -491,7 +518,6 @@ NodeId create_gegl_node(char *name) {
       node->Inputs.emplace_back(GetNextId(), nid, *s, PinType::GEGL_BUFFER);
     }
   }
-
   {
     guint        n_properties;
     GParamSpec **properties = gegl_operation_list_properties (name, &n_properties);
@@ -504,17 +530,22 @@ NodeId create_gegl_node(char *name) {
       gchar        *default_string = NULL;
       PinType pintype;
 
-      property_nickname = g_param_spec_get_nick (properties[i]);
-      property_name = g_param_spec_get_name (properties[i]);
-      property_default = g_param_spec_get_default_value (properties[i]);
-
-      Pin new_pin = Pin(GetNextId(), nid, property_nickname);
+      property_default     = g_param_spec_get_default_value (properties[i]);
+      property_nickname    = g_param_spec_get_nick (properties[i]);
+      property_name        = g_param_spec_get_name (properties[i]);
+      
+      Pin new_pin = Pin(GetNextId(), nid, property_name, property_nickname);
+      
+      new_pin.description  = g_param_spec_get_blurb(properties[i]);
       
       //@Todo set node defaults by gegl default
       switch (G_VALUE_TYPE (property_default))
       {
       case G_TYPE_DOUBLE:
 	new_pin.Type = PinType::DOUBLE;
+	gegl_node_get(gn, new_pin.Name.c_str(), &new_pin.value, NULL);
+	new_pin.mind = G_PARAM_SPEC_DOUBLE (properties[i])->minimum;
+	new_pin.maxd = G_PARAM_SPEC_DOUBLE (properties[i])->maximum;
 	/* default_string = g_strdup_printf (" (default: %f)", */
 	/* 					g_value_get_double (property_default)); */
 	break;
@@ -528,13 +559,21 @@ NodeId create_gegl_node(char *name) {
 	/* default_string = g_strdup_printf (" (default: \"%s\")", */
 	/* 					g_value_get_string (property_default)); */
 	break;
-      case G_TYPE_INT:
+      case G_TYPE_INT: {
 	new_pin.Type = PinType::INT;
+	gegl_node_get(gn, new_pin.Name.c_str(), &new_pin.value, NULL);
+	new_pin.min = G_PARAM_SPEC_INT (properties[i])->minimum;
+	new_pin.max = G_PARAM_SPEC_INT (properties[i])->maximum;
+
 	/* default_string = g_strdup_printf (" (default: %d)", */
 	/* 					g_value_get_int (property_default)); */
+      }
 	break;
+	
       case G_TYPE_BOOLEAN:
 	new_pin.Type = PinType::BOOLEAN;
+	gegl_node_get(gn, new_pin.Name.c_str(), &new_pin.value, NULL);
+	
 	/* default_string = g_strdup_printf (" (default: %s)", */
 	/* 					g_value_get_boolean (property_default)? */
 	/* 					"TRUE" : "FALSE"); */
@@ -736,24 +775,17 @@ void Application_Initialize() {
   GPtrArray *ops;
   g_hash_table_iter_init(&iter, categories_ht);
   while(g_hash_table_iter_next(&iter, (void**)&category, (void**)&ops)) {
-    printf("%s\n", category);
+
     for(int i = 0; i < ops->len; i += 2) {
       char * op_name  = (char *)g_ptr_array_index(ops, i);
       char * op_title = (char *)g_ptr_array_index(ops, i+1);
-      printf("    %s   ~~aka~~ %s\n", op_name, op_title);
     }    
   }
   
   graph = gegl_node_new ();
 
 
-  // // //
-    
-  // NodeId alien = create_gegl_node("gegl:alien-map");   
-  // NodeId bloom = create_gegl_node("gegl:bloom");  
-  // create_link(FindNode(alien)->Outputs[0].ID, FindNode(bloom)->Inputs[0].ID);
-     
-  
+  // // //  Example
   NodeId n_load = create_gegl_node("gegl:load");
   GeglNode *load = FindNode(n_load)->gegl_node;
   gegl_node_set(load, "path", "MyImage01.jpg", NULL);
@@ -769,38 +801,23 @@ void Application_Initialize() {
   gegl_node_set(text, "size", 30.0,
 		"color", gegl_color_new ("rgb(1.0,1.0,1.0)"),
 		"string", "The Heart Break Photo Editor",
-		NULL);
-  
-  // GeglBuffer *buffer  = NULL;
-  // NodeId n_sink = create_gegl_node("gegl:buffer-sink");
-  // GeglNode *sink = FindNode(n_sink)->gegl_node;
-  // gegl_node_set(sink, "operation", "gegl:buffer-sink",
-  // 		"buffer", &buffer,
-  // 		NULL);
+		NULL); 
 
   NodeId n_sink = create_hb_canvas_node();
   GeglNode *sink = FindNode(n_sink)->gegl_node;
-  // gegl_node_link_many(load, edge,  over, sink, NULL);
 
   create_link(FindNode(n_load)->Outputs[0].ID, FindNode(n_edge)->Inputs[0].ID);
   create_link(FindNode(n_edge)->Outputs[0].ID, FindNode(n_over)->Inputs[1].ID);
   create_link(FindNode(n_text)->Outputs[0].ID, FindNode(n_over)->Inputs[0].ID);
   create_link(FindNode(n_over)->Outputs[0].ID, FindNode(n_sink)->Inputs[0].ID);
-  
-  hb_canvas_node_process(n_sink);
-  
-  // testimageHeight = gegl_buffer_get_height(buffer);
-  // testimageWidth  = gegl_buffer_get_width(buffer);
-  // int count = gegl_buffer_get_pixel_count(buffer);  
-  // size_t testsize = count * 4 * sizeof(char);
-  // void *data = malloc(testsize);
 
-  // gegl_buffer_get (buffer,
-  // 		   NULL,
-  // 		   1.0,
-  // 		   babl_format ("R'G'B'A u8"),
-  // 		   data, GEGL_AUTO_ROWSTRIDE,
-  // 		   GEGL_ABYSS_NONE);
+  editor->SetNodePosition(n_load, ImVec2(0, 0));
+  editor->SetNodePosition(n_edge, ImVec2(220, 0));
+  editor->SetNodePosition(n_over, ImVec2(570, 150));
+  editor->SetNodePosition(n_text, ImVec2(220, 250));
+  editor->SetNodePosition(n_sink, ImVec2(800, 125)); 
+  
+  hb_canvas_node_process(n_sink);  
   
   editor->NavigateToContent();
   
@@ -812,9 +829,7 @@ void Application_Initialize() {
 
   s_HeaderBackground = Application_LoadTexture("data/BlueprintBackground.png");
   s_SaveIcon         = Application_LoadTexture("data/ic_save_white_24dp.png");
-  s_RestoreIcon      = Application_LoadTexture("data/ic_restore_white_24dp.png");
-    
-  //auto& io = ImGui::GetIO();
+  s_RestoreIcon      = Application_LoadTexture("data/ic_restore_white_24dp.png");   
 }
 
 void Application_Finalize() {
@@ -1184,7 +1199,10 @@ void ShowLeftPane(float paneWidth) {
 
     }
   }
+
+  // printf("want keyboard %d, want text input %d\n", io.WantCaptureKeyboard, io.WantTextInput);
   
+  if (io.WantTextInput == 0) {
   // move selection around
   if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_RightArrow))) {
     if (nodeCount == 1 && linkCount == 0) {
@@ -1319,20 +1337,32 @@ void ShowLeftPane(float paneWidth) {
       }
     }
   }
-
+}
   if (editor->HasSelectionChanged())
     ++changeCount;
 
   ImGui::EndChild();
 }
 
+void propogate_update(NodeId node_id) {
+  Node *node = FindNode(node_id);
+  node->propogate_update = true;
+  for (Pin out : node->Outputs) {
+    for (LinkId link_id : out.links) {
+      Link *link = FindLink(link_id);
+      propogate_update(FindPin(link->EndPinID)->node_id);
+    }
+  }
+}
+
 void Application_Frame() {
   UpdateTouch();
-
   auto& io = ImGui::GetIO();
-
-
   
+  // ImVec2 mpos = io.MousePos;
+  // printf("mpos x: %f, y:%f\n", mpos.x, mpos.y);
+  
+
   ImGui::Text("FPS: %.2f (%.2gms)", io.Framerate, io.Framerate ? 1000.0f / io.Framerate : 0.0f);
 
   //auto& style = ImGui::GetStyle();
@@ -1352,13 +1382,19 @@ void Application_Frame() {
 
   ImGui::SameLine(0.0f, 12.0f);
 
-  for (auto& node : s_Nodes) { //@todo figure out how to put this in the s_Nodes loop below
+  for (auto &node : s_Nodes) { //@todo figure out how to put this in the s_Nodes loop below
 			       //probabl something to do with editor->begin is fucking it up (not showing)
-  if (node.kind == node_kind::CANVAS) {
-    ImGui::Begin("Canvas");
-    ImGui::Image((void*)(intptr_t)node.texture, node.size);
-    ImGui::End();
-  }
+    if (node.kind == node_kind::CANVAS) {
+      if (node.propogate_update) {
+	printf("here\n");
+	hb_canvas_node_process(node.ID);
+
+      }
+      ImGui::Begin("Canvas");
+      ImGui::Image((void*)(intptr_t)node.texture, node.size);
+      ImGui::End();
+    }
+    node.propogate_update = false;
   }
   
   editor->Begin("Node editor");
@@ -1394,29 +1430,57 @@ void Application_Frame() {
 
 	builder.BeginInputPad(input.ID);
 	ImGui::PushStyleVar(ImGuiStyleVar_Alpha, alpha);
+
+	ImGui::BeginHorizontal((void *)&input.Title);
 	DrawPinIcon(&input, IsPinLinked(input.ID), (int)(alpha * 255));
 	ImGui::Spring(0);
-	if (!input.Name.empty()) {
-	  ImGui::TextUnformatted(input.Name.c_str());
-	  ImGui::Spring(0);
-	}
-        
+	// ImGui::SameLine();
+	ImGui::TextUnformatted(input.Title.c_str());
+	// ImGui::Spring(0);
+	ImGui::EndHorizontal();
+	
+	// ImGui::NewLine();
 	if (input.Type == PinType::BOOLEAN) {
-	  ImGui::Checkbox("boolean", (bool *)&input.value);          
-	  // ImGui::Spring(0);
+	  if (ImGui::Checkbox("boolean", (bool *)&input.value)) {
+	    node.propogate_update = true;
+	    gegl_node_set(node.gegl_node, input.Name.c_str(), input.value, NULL);            
+	  }
+
 	} else if (input.Type == PinType::INT) {
-	  ImGui::DragInt("", (int *)&input.value, 0.2f, 1, 100);
-	  // ImGui::Spring(0);
+	  if (ImGui::DragInt("", (int *)&input.value, 0.2f, input.min, input.max)) {
+	    node.propogate_update = true;
+	    gegl_node_set(node.gegl_node, input.Name.c_str(), input.value, NULL);            
+	  }
+
 	} else if (input.Type == PinType::DOUBLE) {
-	  ImGui::DragFloat("", (float *)&input.value, 0.2f, 1, 100);
-	  // ImGui::Spring(0);
-	} else if (input.Type == PinType::STRING) {
+	  ImGui::PushItemWidth(200);
+	  if (ImGui::InputDouble("", &input.valued)) {
+	    node.propogate_update = true;
+	    printf("double is up dated\n");
+	    if (input.valued < input.mind) {
+	      input.valued = input.mind;
+	    } else if (input.valued > input.maxd) {
+	      input.valued = input.maxd;
+	    }
+	    printf("double : %f\n", input.valued);
+	    
+	    gegl_node_set(node.gegl_node, input.Name.c_str(), input.valued, NULL);
+	  }
+
+	} else if (input.Type == PinType::STRING) {	  
 	  ImGui::PushItemWidth(80);
-	  ImGui::InputText("Input", (char *)input.value, 250);
-	  // ImGui::Spring(0);
+	  if(ImGui::InputText("", (char *)input.value, 250)) {
+	    node.propogate_update = true;
+            
+	    gegl_node_set(node.gegl_node, input.Name.c_str(), input.value, NULL);
+	  }
 	}
 	ImGui::PopStyleVar();
 	builder.EndPad();
+
+	if(node.propogate_update) {
+	  propogate_update(node.ID);
+	}	
       }
 
       // spacer between input and output pads
@@ -1439,6 +1503,7 @@ void Application_Frame() {
 
 	ImGui::PushStyleVar(ImGuiStyleVar_Alpha, alpha);
 	builder.BeginOutputPad(output.ID);
+	ImGui::BeginHorizontal((void *)&output.Title);
 	if (output.Type == PinType::STRING)
 	{
 	  static char buffer[128] = "Edit Me\nMultiline!";
@@ -1466,6 +1531,7 @@ void Application_Frame() {
 	}
 	ImGui::Spring(0);
 	DrawPinIcon(&output, IsPinLinked(output.ID), (int)(alpha * 255));
+	ImGui::EndHorizontal();
 	ImGui::PopStyleVar();
 	builder.EndPad();
       }
@@ -1481,23 +1547,23 @@ void Application_Frame() {
     if (!createNewNode) {
       if (editor->BeginCreate(ImColor(255, 255, 255), 2.0f)) {
 
-	auto showLabel = [](const char* label, ImColor color)
-	{
-	  ImGui::SetCursorPosY(ImGui::GetCursorPosY() - ImGui::GetTextLineHeight());
-	  auto size = ImGui::CalcTextSize(label);
+	// auto showLabel = [](const char* label, ImColor color)
+	// {
+	//   ImGui::SetCursorPosY(ImGui::GetCursorPosY() - ImGui::GetTextLineHeight());
+	//   auto size = ImGui::CalcTextSize(label);
 
-	  auto padding = ImGui::GetStyle().FramePadding;
-	  auto spacing = ImGui::GetStyle().ItemSpacing;
+	//   auto padding = ImGui::GetStyle().FramePadding;
+	//   auto spacing = ImGui::GetStyle().ItemSpacing;
 
-	  ImGui::SetCursorPos(ImGui::GetCursorPos() + ImVec2(spacing.x, -spacing.y));
+	//   ImGui::SetCursorPos(ImGui::GetCursorPos() + ImVec2(spacing.x, -spacing.y));
 
-	  auto rectMin = ImGui::GetCursorScreenPos() - padding;
-	  auto rectMax = ImGui::GetCursorScreenPos() + size + padding;
+	//   auto rectMin = ImGui::GetCursorScreenPos() - padding;
+	//   auto rectMax = ImGui::GetCursorScreenPos() + size + padding;
 
-	  auto drawList = ImGui::GetWindowDrawList();
-	  drawList->AddRectFilled(rectMin, rectMax, color, size.y * 0.15f);
-	  ImGui::TextUnformatted(label);
-	};
+	//   auto drawList = ImGui::GetWindowDrawList();
+	//   drawList->AddRectFilled(rectMin, rectMax, color, size.y * 0.15f);
+	//   ImGui::TextUnformatted(label);
+	// };
 
 	PinId startPinId = 0, endPinId = 0;
 	if (editor->QueryNewLink(&startPinId, &endPinId)) {
@@ -1505,18 +1571,15 @@ void Application_Frame() {
 	  auto endPin   = FindPin(endPinId);
 
 	  newLinkPin = startPin ? startPin : endPin;
-	  if (startPin->Kind == PinDirection::INPUT)
-	  {
+	  if (startPin->Kind == PinDirection::INPUT) {
 	    std::swap(startPin, endPin);
 	    std::swap(startPinId, endPinId);
 	  }
 	  if (startPin && endPin) {
-	    if (endPin == startPin)
-	    {
+	    if (endPin == startPin) {
 	      editor->RejectNewItem(ImColor(255, 0, 0), 2.0f);
 	    }            
-	    else if (endPin->Kind == startPin->Kind)
-	    {
+	    else if (endPin->Kind == startPin->Kind) {
 	      showLabel("x Incompatible Pin Kind", ImColor(45, 32, 32, 180));
 	      editor->RejectNewItem(ImColor(255, 0, 0), 2.0f);
 	    }
@@ -1526,13 +1589,11 @@ void Application_Frame() {
 	    //    showLabel("x Cannot connect to self", ImColor(45, 32, 32, 180));
 	    //    RejectNewItem(ImColor(255, 0, 0), 1.0f);
 	    //}
-	    else if (endPin->Type != startPin->Type)
-	    {	     
+	    else if (endPin->Type != startPin->Type) {	     
 	      showLabel("x Incompatible Pin Type", ImColor(45, 32, 32, 180));
 	      editor->RejectNewItem(ImColor(255, 128, 128), 1.0f);
 	    }
-	    else
-	    {
+	    else {
 	      showLabel("+ Create Link", ImColor(32, 45, 32, 180));
 	      if (editor->AcceptNewItem(ImColor(128, 255, 128), 4.0f)) {
 		create_link(startPinId, endPinId);
@@ -1543,14 +1604,12 @@ void Application_Frame() {
 	}
 
 	PinId pinId = 0;
-	if (editor->QueryNewNode(&pinId))
-	{
+	if (editor->QueryNewNode(&pinId)) {
 	  newLinkPin = FindPin(pinId);
 	  if (newLinkPin)
 	    showLabel("+ Create Node", ImColor(32, 45, 32, 180));
 
-	  if (editor->AcceptNewItem())
-	  {
+	  if (editor->AcceptNewItem()) {
 	    createNewNode  = true;
 	    newNodeLinkPin = FindPin(pinId);
 	    newLinkPin = nullptr;
@@ -1560,8 +1619,9 @@ void Application_Frame() {
 	  }
 	}
       }
-      else
+      else {
 	newLinkPin = nullptr;
+      }
 
       editor->EndCreate();
 
@@ -1682,9 +1742,13 @@ void Application_Frame() {
     NodeId node_id;
     // node = FindNode(show_all_category_menus());
 
+    PinId dragged_pin_id = editor->GetDraggedPin();
+    // Pin *dragged_pin = FindPin(dragged_pin_id);
+    // printf("create node newLinkPin %s\n", dragged_pin->Name.c_str());
+    
     GHashTableIter iter;
     char *category;
-    GPtrArray *ops;
+    GPtrArray *ops;    
     g_hash_table_iter_init(&iter, categories_ht);
     while (g_hash_table_iter_next(&iter, (void**)&category, (void**)&ops)) {
       if (ImGui::BeginMenu(category)) {
@@ -1698,9 +1762,7 @@ void Application_Frame() {
 	}
 	ImGui::EndMenu();
       }
-    }
-
-    
+    }    
     
     if (node_id.Get() != 0) {
       node = FindNode(node_id);
