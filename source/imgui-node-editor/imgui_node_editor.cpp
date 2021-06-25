@@ -1202,8 +1202,7 @@ void NodeBuilder::PinRect(const ImVec2& a, const ImVec2& b)
   m_ResolvePinRect     = false;
 }
 
-void NodeBuilder::PinPivotRect(const ImVec2& a, const ImVec2& b)
-{
+void NodeBuilder::PinPivotRect(const ImVec2& a, const ImVec2& b) {
   IM_ASSERT(nullptr != m_CurrentPin);
 
   m_CurrentPin->m_Pivot = ImRect(a, b);

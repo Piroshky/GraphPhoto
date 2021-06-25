@@ -64,21 +64,20 @@ static GList * gegl_operations_build(GList *list, GType type) {
   GeglOperationClass *klass;
   GType *ops;
   guint  children;
-  gint   no;
+  
 
   if (!type) {
     return list;
   }
 
   klass = (GeglOperationClass*)g_type_class_ref (type);
-  if (klass->name != NULL)  {
+  if (klass->name != NULL) {
     list = g_list_prepend (list, klass);
   }
 
   ops = g_type_children (type, &children);
 
-  for (no=0; no<children; no++)
-  {
+  for (guint no=0; no<children; no++) {
     list = gegl_operations_build (list, ops[no]);
   }
   if (ops)
@@ -142,7 +141,7 @@ struct Pin {
   PinType         Type;
   PinDirection        Kind;
   std::vector<LinkId> links;
-  void *value;
+  void *value = nullptr;
   int min;
   int max;
 
@@ -155,7 +154,7 @@ struct Pin {
   {}
   
   Pin(int id, int nid, const char* name, PinType type):
-    ID(id), node_id(nid), Name(name), Title(name), Kind(PinDirection::INPUT), value(nullptr), Type(type)
+    ID(id), node_id(nid), Name(name), Title(name), Type(type),  Kind(PinDirection::INPUT), value(nullptr)
   {}
   
 };
@@ -195,7 +194,7 @@ struct Node {
   std::string SavedState;
 
   Node(int id, const char* name, ImColor color = ImColor(255, 255, 255)):
-    ID(id), Name(name), Color(color), Type(NodeStyle::Blueprint), Size(0, 0),
+    ID(id), Name(name), Type(NodeStyle::Blueprint), Color(color), Size(0, 0),
     is_selected(false)
   {}
 };
@@ -294,7 +293,7 @@ void delete_link(LinkId link_id) {
     return;
   }
 
-  printf("Deleting link %d\n", link_id.Get());
+  printf("Deleting link %ld\n", link_id.Get());
   
   Pin *start = FindPin(link->StartPinID);
   Pin *end   = FindPin(link->EndPinID);
@@ -313,6 +312,7 @@ void delete_link(LinkId link_id) {
 
   Node *start_node = FindNode(start->node_id);
   Node *end_node   = FindNode(end->node_id);
+  bool delete_gegl_node = false;
 
   if (start_node == nullptr) {
     fprintf(stderr, "Error: when deleteing link. The start node is null.\n");
@@ -322,7 +322,6 @@ void delete_link(LinkId link_id) {
     fprintf(stderr, "Error: when deleteing link. The end node was null.\n");
   }
 
-  bool delete_gegl_node = true;
   if (start_node->gegl_node == nullptr) {
     fprintf(stderr, "Error: when deleteing link. The start node, `%s`, has a null gegl_node\n", start_node->Name.c_str());
     delete_gegl_node = false;
@@ -403,7 +402,7 @@ void create_link(PinId startPinId, PinId endPinId) {
   printf("trying to connect %s %s to %s %s, (NodeId %ld to %ld), (Pointer %p)\n",
 	 start_node->Name.c_str(), start->Name.c_str(),
 	 end_node->Name.c_str(),   end->Name.c_str(),
-	 start_node->ID.Get(),     end_node->ID.Get()), start_node;
+	 start_node->ID.Get(),     end_node->ID.Get(), (void*)start_node);
   
   start->links.emplace_back(new_link);
   if (!end->links.empty()) {
@@ -521,14 +520,13 @@ NodeId create_gegl_node(char *name) {
   {
     guint        n_properties;
     GParamSpec **properties = gegl_operation_list_properties (name, &n_properties);
-    for (int i = 0; i < n_properties; i++) {
+    for (guint i = 0; i < n_properties; i++) {
             
       const gchar  *property_name;
       const gchar  *property_nickname;
       const GValue *property_default;
       gchar        *property_blurb;
-      gchar        *default_string = NULL;
-      PinType pintype;
+      // gchar        *default_string = NULL;
 
       property_default     = g_param_spec_get_default_value (properties[i]);
       property_nickname    = g_param_spec_get_nick (properties[i]);
@@ -579,7 +577,7 @@ NodeId create_gegl_node(char *name) {
 	/* 					"TRUE" : "FALSE"); */
 	break;
       default:
-	default_string = NULL;
+	// default_string = NULL;
 	fprintf(stderr, "ERROR: %s %s : property kind unhandled: %s\n", name, property_name, g_type_name(properties[i]->value_type));
 	continue;
 	break;
@@ -615,7 +613,7 @@ NodeId create_gegl_node(char *name) {
   
   editor->SetNodePosition(nid, ImVec2(-152, 220));
   
-  printf("Created Node %s, NodeId: %ld, Pointer: %p\n", node->Name.c_str(), node_id.Get(), node);
+  printf("Created Node %s, NodeId: %ld, Pointer: %p\n", node->Name.c_str(), node_id.Get(), (void*)node);
   return node_id;
 }
 
@@ -635,7 +633,7 @@ NodeId create_hb_canvas_node() {
 				       "operation", "gegl:buffer-sink",
 				       "buffer",    &(node->gegl_buffer), NULL);
   node->gegl_node = sink;
-  printf("create node->gegl_node %p\n", node->gegl_node);
+  printf("create node->gegl_node %p\n", (void*)node->gegl_node);
   return nid;
 }
 
@@ -648,7 +646,7 @@ void hb_canvas_node_process(NodeId node_id) {
     return;
   }
   printf("--- reassigning buffer\n");
-  printf("--- hb node->gegl_node %p\n", node->gegl_node);
+  printf("--- hb node->gegl_node %p\n", (void*)node->gegl_node);
   void *buf;
   gegl_node_get(node->gegl_node, "buffer", &buf, NULL);
   printf("--- buffer before %p\n", buf);
@@ -776,7 +774,7 @@ void Application_Initialize() {
   g_hash_table_iter_init(&iter, categories_ht);
   while(g_hash_table_iter_next(&iter, (void**)&category, (void**)&ops)) {
 
-    for(int i = 0; i < ops->len; i += 2) {
+    for(guint i = 0; i < ops->len; i += 2) {
       char * op_name  = (char *)g_ptr_array_index(ops, i);
       char * op_title = (char *)g_ptr_array_index(ops, i+1);
     }    
@@ -1199,8 +1197,6 @@ void ShowLeftPane(float paneWidth) {
 
     }
   }
-
-  // printf("want keyboard %d, want text input %d\n", io.WantCaptureKeyboard, io.WantTextInput);
   
   if (io.WantTextInput == 0) {
   // move selection around
@@ -1753,7 +1749,7 @@ void Application_Frame() {
     while (g_hash_table_iter_next(&iter, (void**)&category, (void**)&ops)) {
       if (ImGui::BeginMenu(category)) {
       
-	for (int i = 0; i < ops->len; i += 2) {
+	for (guint i = 0; i < ops->len; i += 2) {
 	  char * op_name  = (char *)g_ptr_array_index(ops, i);
 	  char * op_title = (char *)g_ptr_array_index(ops, i+1);
 	  if (ImGui::MenuItem(op_title)) {	    
