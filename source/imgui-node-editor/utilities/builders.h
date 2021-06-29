@@ -47,7 +47,7 @@ private:
         End
     };
 
-    bool SetStage(Stage stage);
+    void SetStage(Stage stage);
 
     void Pin(PinId id, PinDirection kind);
     void EndPin();
@@ -72,4 +72,3 @@ private:
 //------------------------------------------------------------------------------
 } //namespace Internal
 } // namespace Editor
-

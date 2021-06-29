@@ -82,7 +82,6 @@ static const float c_LinkSelectThickness        = 5.0f;  // canvas pixels
 static const float c_NavigationZoomMargin       = 0.1f;  // percentage of visible bounds
 static const float c_MouseZoomDuration          = 0.15f; // seconds
 static const float c_SelectionFadeOutDuration   = 0.15f; // seconds
-static const auto  c_ScrollButtonIndex          = 1;
 
 
 //------------------------------------------------------------------------------
@@ -1419,10 +1418,14 @@ void EditorContext::End() {
   if (m_CurrentAction && !m_CurrentAction->Process(control))
     m_CurrentAction = nullptr;
 
-  if (m_NavigateAction.m_IsActive)
-    m_NavigateAction.Process(control);
+  
+  if (m_NavigateAction.m_IsActive) {
+    // happens during right click drag
+    m_NavigateAction.Process(control);    
+  }
   else
     m_NavigateAction.Accept(control);
+
 
   if (nullptr == m_CurrentAction) {
     EditorAction* possibleAction  = nullptr;
@@ -1433,14 +1436,15 @@ void EditorContext::End() {
 
       if (result == AcceptResult::TRUE)
 	return true;
-      else if (/*!possibleAction &&*/ result == AcceptResult::POSSIBLE)
-	possibleAction = &action;
       else if (result == AcceptResult::POSSIBLE)
+	possibleAction = &action;
+      else // if (result == AcceptResult::POSSIBLE)
 	action.Reject();
 
       return false;
     };
 
+    // Process actions except the navigate action is different for some reason and also has a shortcut in it despite there being a different shortcut action
     if (accept(m_ContextMenuAction))
       m_CurrentAction = &m_ContextMenuAction;
     else if (accept(m_ShortcutAction))
@@ -3557,36 +3561,34 @@ NavigateAction::NavigateAction(EditorContext* e, ImGuiEx::Canvas& canvas):
 AcceptResult NavigateAction::Accept(const Control& control) {
     IM_ASSERT(!m_IsActive);
 
-    if (m_IsActive)
-        return FALSE;
-
-    if (ImGui::IsWindowHovered() /*&& !ImGui::IsAnyItemActive()*/ && ImGui::IsMouseDragging(c_ScrollButtonIndex, 0.0f))
+    if (m_IsActive) 
+      return FALSE;
+    
+    if (ImGui::IsWindowHovered() /*&& !ImGui::IsAnyItemActive()*/ && ImGui::IsMouseDragging(ImGuiMouseButton_Right, 0.0f))
     {
         m_IsActive    = true;
         m_ScrollStart = m_Scroll;
-        m_ScrollDelta = ImGui::GetMouseDragDelta(c_ScrollButtonIndex);
+        m_ScrollDelta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Right);
         m_Scroll      = m_ScrollStart - m_ScrollDelta * m_Zoom;
     }
 
     auto& io = ImGui::GetIO();
 
     if (ImGui::IsWindowFocused() &&
-	ImGui::IsKeyPressed((ImGui::GetKeyIndex(ImGuiKey_F))) &&
+	ImGui::IsKeyPressed((ImGui::GetKeyIndex(ImGuiKey_Z))) &&
 	Editor->AreShortcutsEnabled())
     {
         const auto allowZoomIn = io.KeyShift;
 
         auto findHotObjectToZoom = [this, &control, &io]() -> Object*
         {
-            if (control.HotObject)
-            {
+            if (control.HotObject) {
                 if (auto pin = control.HotObject->AsPin())
                     return pin->m_Node;
                 else
                     return control.HotObject;
             }
-            else if (control.BackgroundHot)
-            {
+            else if (control.BackgroundHot) {
                 auto node = Editor->FindNodeAt(io.MousePos);
                 if (IsGroup(node))
                     return node;
@@ -3596,9 +3598,10 @@ AcceptResult NavigateAction::Accept(const Control& control) {
         };
 
         bool navigateToContent = false;
-        if (!Editor->GetSelectedObjects().empty())
-        {
-            if (m_Reason != NavigationReason::Selection || m_LastSelectionId != Editor->GetSelectionId() || allowZoomIn)
+        if (!Editor->GetSelectedObjects().empty()) {
+            if (m_Reason != NavigationReason::Selection ||
+		m_LastSelectionId != Editor->GetSelectionId() ||
+		allowZoomIn)
             {
                 m_LastSelectionId = Editor->GetSelectionId();
                 NavigateTo(Editor->GetSelectionBounds(), allowZoomIn, -1.0f, NavigationReason::Selection);
@@ -3606,9 +3609,10 @@ AcceptResult NavigateAction::Accept(const Control& control) {
             else
                 navigateToContent = true;
         }
-        else if(auto hotObject = findHotObjectToZoom())
-        {
-            if (m_Reason != NavigationReason::Object || m_LastObject != hotObject || allowZoomIn)
+        else if(auto hotObject = findHotObjectToZoom()) {
+            if (m_Reason != NavigationReason::Object ||
+		m_LastObject != hotObject ||
+		allowZoomIn)
             {
                 m_LastObject = hotObject;
                 auto bounds = hotObject->GetBounds();
@@ -3634,16 +3638,15 @@ AcceptResult NavigateAction::Accept(const Control& control) {
     return m_IsActive ? TRUE : FALSE;
 }
 
-bool NavigateAction::Process(const Control& control)
-{
+bool NavigateAction::Process(const Control& control) {
     IM_UNUSED(control);
 
     if (!m_IsActive)
         return false;
 
-    if (ImGui::IsMouseDragging(c_ScrollButtonIndex, 0.0f))
+    if (ImGui::IsMouseDragging(ImGuiMouseButton_Right, 0.0f))
     {
-        m_ScrollDelta = ImGui::GetMouseDragDelta(c_ScrollButtonIndex);
+      m_ScrollDelta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Right);
         m_Scroll      = m_ScrollStart - m_ScrollDelta * m_Zoom;
 
 //         if (IsActive && Animation.IsPlaying())
@@ -3756,18 +3759,15 @@ void NavigateAction::NavigateTo(const ImRect& target, float duration, Navigation
     m_Animation.NavigateTo(target, duration);
 }
 
-void NavigateAction::StopNavigation()
-{
-    m_Animation.Stop();
+void NavigateAction::StopNavigation() {
+  m_Animation.Stop();
 }
 
-void NavigateAction::FinishNavigation()
-{
-    m_Animation.Finish();
+void NavigateAction::FinishNavigation() {
+  m_Animation.Finish();
 }
 
-bool NavigateAction::MoveOverEdge()
-{
+bool NavigateAction::MoveOverEdge() {
     // Don't interrupt non-edge animations
     if (m_Animation.IsPlaying())
         return false;

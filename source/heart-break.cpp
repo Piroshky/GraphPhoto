@@ -145,6 +145,7 @@ struct Pin {
   int min;
   int max;
 
+  double prev_valued;
   double valued;
   double mind;
   double maxd;
@@ -285,6 +286,17 @@ static Pin* FindPin(PinId id) {
   return nullptr;
 }
 
+void propogate_update(NodeId node_id) {
+  Node *node = FindNode(node_id);
+  node->propogate_update = true;
+  for (Pin out : node->Outputs) {
+    for (LinkId link_id : out.links) {
+      Link *link = FindLink(link_id);
+      propogate_update(FindPin(link->EndPinID)->node_id);
+    }
+  }
+}
+
 void delete_link(LinkId link_id) {
   Link *link = FindLink(link_id);
    
@@ -331,6 +343,8 @@ void delete_link(LinkId link_id) {
     fprintf(stderr, "Error: when deleteing link. The end node, `%s`, has a null gegl_node\n", end_node->Name.c_str());
     delete_gegl_node = false;
   }
+
+  propogate_update(end->node_id);
 
   //@Todo gegl might just auto matically delete a node if you connect a new input...
   // yes it does see gegl_node_connect_from (GeglNode    *sink,
@@ -422,6 +436,8 @@ void create_link(PinId startPinId, PinId endPinId) {
     fprintf(stderr, "error: could not connect gegl nodes\n");
     exit(1);
   }
+  
+  propogate_update(end->node_id);
 }
 
 
@@ -472,23 +488,64 @@ void BuildNodes() {
 //   }
 // }
 
-// backup
-// // creates a ui node and sets its gegl_node member to the appropriate gegl node
-// NodeId create_gegl_node(char *name) {
-//   NodeId node_id = create_node_by_name(name);
+void update_ui_node_properties(NodeId node_id) {
+  Node *node = FindNode(node_id);
+  if (!node) {
+    return;
+  }
   
-//   if (node_id.Get() == 0) { return node_id; }
-  
-//   GeglNode *gn = gegl_node_new_child(graph, "operation", name, NULL);
-//   FindNode(node_id)->gegl_node = gn;
-  
-//   editor->SetNodePosition(node_id, ImVec2(-152, 220));
-  
-//   Node *node = FindNode(node_id);
-//   printf("Created Node %s, NodeId: %ld, Pointer: %p\n", node->Name.c_str(), node_id.Get(), node);
-//   return node_id;
-// }
+  GeglNode *gegl_node = node->gegl_node;
+  const char *operation_name = gegl_node_get_operation(gegl_node);
+  guint        n_properties;
+  GParamSpec **properties = gegl_operation_list_properties(operation_name, &n_properties);
+  for (guint i = 0; i < n_properties; i++) {
+    
+    const gchar  *property_name;
+    const GValue *property_default;
+    property_name        = g_param_spec_get_name(properties[i]);
+    property_default     = g_param_spec_get_default_value (properties[i]);
 
+    Pin *pin = nullptr;
+
+    for (Pin& p : node->Inputs) {
+      if (strcmp(p.Name.c_str(), property_name) == 0) {
+	pin = &p;
+	break;
+      }
+    }
+
+    if (!pin) {
+      printf("Error: could not find pin with name %s in node\n", property_name);
+      return;
+    }
+
+    switch (G_VALUE_TYPE (property_default))
+    {
+    case G_TYPE_DOUBLE:      
+      gegl_node_get(gegl_node, pin->Name.c_str(), &pin->valued, NULL);
+      break;
+      
+    case G_TYPE_STRING:
+      gegl_node_get(gegl_node, pin->Name.c_str(), &pin->value, NULL);
+      break;
+      
+    case G_TYPE_INT: {
+      gegl_node_get(gegl_node, pin->Name.c_str(), &pin->value, NULL);
+      break;
+    }
+	
+    case G_TYPE_BOOLEAN:
+      gegl_node_get(gegl_node, pin->Name.c_str(), &pin->value, NULL);
+	
+      break;
+    default:
+      // default_string = NULL;
+      fprintf(stderr, "ERROR: %s %s : property kind unhandled: %s\n", operation_name, property_name, g_type_name(properties[i]->value_type));
+      continue;
+      break;
+    }
+  }
+}
 
 // creates a ui node and sets its gegl_node member to the appropriate gegl node
 NodeId create_gegl_node(char *name) {
@@ -503,7 +560,7 @@ NodeId create_gegl_node(char *name) {
   if (operation_name) {
     title = gegl_operation_get_key (operation_name, "title");
   } else {
-    operation_name = "No Name";
+    title = "No Name";
   }
 
   s_Nodes.emplace_back(nid, title.c_str(), ImColor(255, 128, 128));
@@ -533,15 +590,20 @@ NodeId create_gegl_node(char *name) {
       property_name        = g_param_spec_get_name (properties[i]);
       
       Pin new_pin = Pin(GetNextId(), nid, property_name, property_nickname);
-      
-      new_pin.description  = g_param_spec_get_blurb(properties[i]);
+
+      if (g_param_spec_get_blurb(properties[i]) &&
+	  g_param_spec_get_blurb(properties[i])[0] != '\0') {
+	new_pin.description = g_param_spec_get_blurb(properties[i]);
+      } else {
+	new_pin.description = nullptr;
+      }
       
       //@Todo set node defaults by gegl default
       switch (G_VALUE_TYPE (property_default))
       {
       case G_TYPE_DOUBLE:
 	new_pin.Type = PinType::DOUBLE;
-	gegl_node_get(gn, new_pin.Name.c_str(), &new_pin.value, NULL);
+	gegl_node_get(gn, new_pin.Name.c_str(), &new_pin.valued, NULL);
 	new_pin.mind = G_PARAM_SPEC_DOUBLE (properties[i])->minimum;
 	new_pin.maxd = G_PARAM_SPEC_DOUBLE (properties[i])->maximum;
 	/* default_string = g_strdup_printf (" (default: %f)", */
@@ -788,6 +850,10 @@ void Application_Initialize() {
   GeglNode *load = FindNode(n_load)->gegl_node;
   gegl_node_set(load, "path", "MyImage01.jpg", NULL);
 
+  char  *path;
+  gegl_node_get (load, "path", &path, NULL);
+  printf("Path %s\n", path);
+
   NodeId n_edge = create_gegl_node("gegl:edge");
   GeglNode *edge = FindNode(n_edge)->gegl_node;
   
@@ -803,6 +869,11 @@ void Application_Initialize() {
 
   NodeId n_sink = create_hb_canvas_node();
   GeglNode *sink = FindNode(n_sink)->gegl_node;
+
+  update_ui_node_properties(n_load);
+  update_ui_node_properties(n_edge);
+  update_ui_node_properties(n_text);
+  update_ui_node_properties(n_over);
 
   create_link(FindNode(n_load)->Outputs[0].ID, FindNode(n_edge)->Inputs[0].ID);
   create_link(FindNode(n_edge)->Outputs[0].ID, FindNode(n_over)->Inputs[1].ID);
@@ -968,26 +1039,30 @@ void ShowStyleEditor(bool* show = nullptr) {
 }
 
 void ShowLeftPane(float paneWidth) {
+  static bool showStyleEditor = false;
+  
   auto& io = ImGui::GetIO();
 
   ImGui::BeginChild("Selection", ImVec2(paneWidth, 0));
 
   paneWidth = ImGui::GetContentRegionAvailWidth();
 
-  static bool showStyleEditor = false;
+  // Button Panel
   ImGui::BeginHorizontal("Style Editor", ImVec2(paneWidth, 0));
-  ImGui::Spring(0.0f, 0.0f);
-  if (ImGui::Button("Zoom to Content"))
-    editor->NavigateToContent();
-  ImGui::Spring(0.0f);
-  if (ImGui::Button("Show Flow"))
   {
-    for (auto& link : s_Links)
-      editor->Flow(link.ID);
+    ImGui::Spring(0.0f, 0.0f);
+    if (ImGui::Button("Zoom to Content"))
+      editor->NavigateToContent();
+    ImGui::Spring(0.0f);
+    if (ImGui::Button("Show Flow"))
+    {
+      for (auto& link : s_Links)
+	editor->Flow(link.ID);
+    }
+    ImGui::Spring();
+    if (ImGui::Button("Edit Style"))
+      showStyleEditor = true;
   }
-  ImGui::Spring();
-  if (ImGui::Button("Edit Style"))
-    showStyleEditor = true;
   ImGui::EndHorizontal();
 
   if (showStyleEditor)
@@ -1136,13 +1211,8 @@ void ShowLeftPane(float paneWidth) {
   for (int i = 0; i < linkCount; ++i)
     ImGui::Text("Link (%p)", selectedLinks[i].AsPointer());
     
-  ImGui::Unindent();
-
-  if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Z)))
-    for (auto& link : s_Links)
-      editor->Flow(link.ID);
-  
-  
+  ImGui::Unindent();  
+  if (io.WantTextInput == 0) {
   if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_A)) &&
       nodeCount == 1) {
     printf("--- updating node ?\n");
@@ -1197,169 +1267,157 @@ void ShowLeftPane(float paneWidth) {
 
     }
   }
-  
-  if (io.WantTextInput == 0) {
-  // move selection around
-  if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_RightArrow))) {
-    if (nodeCount == 1 && linkCount == 0) {
-      Node* selected = FindNode(selectedNodes[0]);
-      for (Pin pin : selected->Outputs) {
-	if (!pin.links.empty()) {
+
+
+    // move selection around
+    if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_RightArrow))) {
+      if (nodeCount == 1 && linkCount == 0) {
+	Node* selected = FindNode(selectedNodes[0]);
+	for (Pin pin : selected->Outputs) {
+	  if (!pin.links.empty()) {
             
 
+	    LinkId top_link;
+	    ImVec2 pos(FLT_MAX, FLT_MAX);
+	    for (LinkId link : pin.links) {
+	      Pin *pin = FindPin(FindLink(link)->EndPinID);
+	      ImVec2 cur = editor->GetNodePosition(pin->node_id);
+	      if (cur.y < pos.y) {
+		pos.y = cur.y;
+		top_link = link;
+	      }
+	    }
+
+	    editor->ClearSelection();
+	    editor->SelectLink(top_link, true);
+	    break;
+	  }
+	}
+      }
+      else if (linkCount == 1 && nodeCount == 0) {
+	Link* selected = FindLink(selectedLinks[0]);
+	Pin*  output   = FindPin(selected->EndPinID);
+	if (output && find_node(output)) {
+	  editor->ClearSelection();
+	  editor->SelectNode(output->node_id, true);
+	}
+      }
+    } 
+
+    // Navigate Left
+    else if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_LeftArrow))) {
+      if (nodeCount == 1 && linkCount == 0) {
+	Node* selected = FindNode(selectedNodes[0]);
+	for (Pin pin : selected->Inputs) {
+	  if (!pin.links.empty()) {
+	    editor->ClearSelection();
+	    editor->SelectLink(pin.links[0], true);
+	    break;
+	  } else {
+	  }
+	}
+      }
+      else if (linkCount == 1 && nodeCount == 0) {
+	Link* selected = FindLink(selectedLinks[0]);
+	Pin*  input    = FindPin(selected->StartPinID);
+	if (input && find_node(input)) {
+	  editor->ClearSelection();
+	  editor->SelectNode(input->node_id, true);
+	}
+      }
+    } 
+
+    // Navigate Down
+    else if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_DownArrow))) {
+      if (linkCount == 1 && nodeCount == 0) {
+	Link *selected = FindLink(selectedLinks[0]);
+	Pin  *input    = FindPin(selected->StartPinID);
+
+	if (input->links.size() > 1) {
+	  Pin  *output   = FindPin(selected->EndPinID);       
+
 	  LinkId top_link;
-	  ImVec2 pos(FLT_MAX, FLT_MAX);
-	  for (LinkId link : pin.links) {
+	  LinkId bottom_link;
+	  ImVec2 bottom_pos(FLT_MAX, FLT_MAX);
+	  ImVec2 start_pos = editor->GetNodePosition(output->node_id);
+	  ImVec2 next_pos(FLT_MAX, FLT_MAX);
+
+	  for (LinkId link : input->links) {
+	    if (link == selected->ID) {continue;}
 	    Pin *pin = FindPin(FindLink(link)->EndPinID);
 	    ImVec2 cur = editor->GetNodePosition(pin->node_id);
-	    if (cur.y < pos.y) {
-	      pos.y = cur.y;
+	    if ((cur.y > start_pos.y) && (cur.y < next_pos.y)) {
+	      next_pos.y = cur.y;
 	      top_link = link;
 	    }
+	    if (cur.y < bottom_pos.y) {
+	      bottom_pos.y = cur.y;
+	      bottom_link = link;
+	    }
 	  }
+	  if (next_pos.y == FLT_MAX) {top_link = bottom_link;}
 
 	  editor->ClearSelection();
 	  editor->SelectLink(top_link, true);
-	  break;
 	}
       }
     }
-    else if (linkCount == 1 && nodeCount == 0) {
-      Link* selected = FindLink(selectedLinks[0]);
-      Pin*  output   = FindPin(selected->EndPinID);
-      if (output && find_node(output)) {
-	editor->ClearSelection();
-	editor->SelectNode(output->node_id, true);
-      }
-    }
-  } 
 
-  // Navigate Left
-  else if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_LeftArrow))) {
-    if (nodeCount == 1 && linkCount == 0) {
-      Node* selected = FindNode(selectedNodes[0]);
-      for (Pin pin : selected->Inputs) {
-	if (!pin.links.empty()) {
-	  editor->ClearSelection();
-	  editor->SelectLink(pin.links[0], true);
-	  break;
-	} else {
-	}
-      }
-    }
-    else if (linkCount == 1 && nodeCount == 0) {
-      Link* selected = FindLink(selectedLinks[0]);
-      Pin*  input    = FindPin(selected->StartPinID);
-      if (input && find_node(input)) {
-	editor->ClearSelection();
-	editor->SelectNode(input->node_id, true);
-      }
-    }
-  } 
-
-  // Navigate Down
-  else if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_DownArrow))) {
-    if (linkCount == 1 && nodeCount == 0) {
-      Link *selected = FindLink(selectedLinks[0]);
-      Pin  *input    = FindPin(selected->StartPinID);
-
-      if (input->links.size() > 1) {
-	Pin  *output   = FindPin(selected->EndPinID);       
-
-	LinkId top_link;
-	LinkId bottom_link;
-	ImVec2 bottom_pos(FLT_MAX, FLT_MAX);
-	ImVec2 start_pos = editor->GetNodePosition(output->node_id);
-	ImVec2 next_pos(FLT_MAX, FLT_MAX);
-
-	for (LinkId link : input->links) {
-	  if (link == selected->ID) {continue;}
-	  Pin *pin = FindPin(FindLink(link)->EndPinID);
-	  ImVec2 cur = editor->GetNodePosition(pin->node_id);
-	  if ((cur.y > start_pos.y) && (cur.y < next_pos.y)) {
-	    next_pos.y = cur.y;
-	    top_link = link;
-	  }
-	  if (cur.y < bottom_pos.y) {
-	    bottom_pos.y = cur.y;
-	    bottom_link = link;
-	  }
-	}
-	if (next_pos.y == FLT_MAX) {top_link = bottom_link;}
-
-	editor->ClearSelection();
-	editor->SelectLink(top_link, true);
-      }
-    }
-  }
-
-  // Navigate Up
-  else if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_UpArrow))) {
-    if (linkCount == 1 && nodeCount == 0) {
-      Link *selected = FindLink(selectedLinks[0]);
-      Pin  *input    = FindPin(selected->StartPinID);
+    // Navigate Up
+    else if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_UpArrow))) {
+      if (linkCount == 1 && nodeCount == 0) {
+	Link *selected = FindLink(selectedLinks[0]);
+	Pin  *input    = FindPin(selected->StartPinID);
 	
-      if (input->links.size() > 1) {
+	if (input->links.size() > 1) {
 	  
-	Pin  *output   = FindPin(selected->EndPinID);
+	  Pin  *output   = FindPin(selected->EndPinID);
 
-	ImVec2 start_pos = editor->GetNodePosition(output->node_id);
+	  ImVec2 start_pos = editor->GetNodePosition(output->node_id);
 
-	LinkId next_link;        
-	ImVec2 next_pos(FLT_MIN, FLT_MIN);
+	  LinkId next_link;        
+	  ImVec2 next_pos(FLT_MIN, FLT_MIN);
 
-	LinkId bottom_link;
-	ImVec2 bottom_pos(FLT_MAX, FLT_MAX);
+	  LinkId bottom_link;
+	  ImVec2 bottom_pos(FLT_MAX, FLT_MAX);
 
-	for (LinkId link : input->links) {
-	  if (link == selected->ID) {continue;}
+	  for (LinkId link : input->links) {
+	    if (link == selected->ID) {continue;}
 
-	  Pin   *pin = FindPin(FindLink(link)->EndPinID);
-	  ImVec2 cur = editor->GetNodePosition(pin->node_id);
+	    Pin   *pin = FindPin(FindLink(link)->EndPinID);
+	    ImVec2 cur = editor->GetNodePosition(pin->node_id);
 
-	  if ((cur.y < start_pos.y) && (cur.y > next_pos.y)) {
-	    next_pos.y = cur.y;
-	    next_link = link;
+	    if ((cur.y < start_pos.y) && (cur.y > next_pos.y)) {
+	      next_pos.y = cur.y;
+	      next_link = link;
+	    }
+	    if (cur.y < bottom_pos.y) {
+	      bottom_pos.y = cur.y;
+	      bottom_link = link;
+	    }
 	  }
-	  if (cur.y < bottom_pos.y) {
-	    bottom_pos.y = cur.y;
-	    bottom_link = link;
-	  }
+	  if (next_pos.y == FLT_MIN) {next_link = bottom_link;}
+
+	  editor->ClearSelection();
+	  editor->SelectLink(next_link, true);
 	}
-	if (next_pos.y == FLT_MIN) {next_link = bottom_link;}
-
-	editor->ClearSelection();
-	editor->SelectLink(next_link, true);
       }
     }
   }
-}
+
   if (editor->HasSelectionChanged())
     ++changeCount;
 
   ImGui::EndChild();
 }
 
-void propogate_update(NodeId node_id) {
-  Node *node = FindNode(node_id);
-  node->propogate_update = true;
-  for (Pin out : node->Outputs) {
-    for (LinkId link_id : out.links) {
-      Link *link = FindLink(link_id);
-      propogate_update(FindPin(link->EndPinID)->node_id);
-    }
-  }
-}
+
 
 void Application_Frame() {
   UpdateTouch();
   auto& io = ImGui::GetIO();
-  
-  // ImVec2 mpos = io.MousePos;
-  // printf("mpos x: %f, y:%f\n", mpos.x, mpos.y);
-  
-
-  ImGui::Text("FPS: %.2f (%.2gms)", io.Framerate, io.Framerate ? 1000.0f / io.Framerate : 0.0f);
+    
+  // ImGui::Text("FPS: %.2f (%.2gms)", io.Framerate, io.Framerate ? 1000.0f / io.Framerate : 0.0f);
 
   //auto& style = ImGui::GetStyle();
 
@@ -1378,8 +1436,16 @@ void Application_Frame() {
 
   ImGui::SameLine(0.0f, 12.0f);
 
+
+  // Keyboard Shortcuts
+  if (io.WantTextInput == 0) {
+    if (ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_F)))
+      for (auto& link : s_Links)
+	editor->Flow(link.ID);
+  }
+
   for (auto &node : s_Nodes) { //@todo figure out how to put this in the s_Nodes loop below
-			       //probabl something to do with editor->begin is fucking it up (not showing)
+			       //probably something to do with editor->begin is fucking it up (not showing)
     if (node.kind == node_kind::CANVAS) {
       if (node.propogate_update) {
 	printf("here\n");
@@ -1405,10 +1471,7 @@ void Application_Frame() {
 	continue;
       }
 
-      const bool isSimple = node.Type == NodeStyle::Simple;      
-
       builder.Begin(node.ID);
-      if (!isSimple) {
 	builder.Header(node.Color);
 	ImGui::Spring(0);
 	ImGui::TextUnformatted(node.Name.c_str());
@@ -1416,6 +1479,27 @@ void Application_Frame() {
 	ImGui::Dummy(ImVec2(0, 28));
 	ImGui::Spring(0);
 	builder.EndHeader();
+
+      // draws output pads
+      for (auto& output : node.Outputs) {
+	auto alpha = ImGui::GetStyle().Alpha;
+	if (newLinkPin && !CanCreateLink(newLinkPin, &output) && &output != newLinkPin)
+	  alpha = alpha * (48.0f / 255.0f);
+
+	ImGui::PushStyleVar(ImGuiStyleVar_Alpha, alpha);
+	builder.BeginOutputPad(output.ID);
+	
+	ImGui::BeginHorizontal((void *)&output.Title);
+
+	if (!output.Name.empty()) {
+	  ImGui::Spring(0);
+	  ImGui::TextUnformatted(output.Name.c_str());
+	}
+	ImGui::Spring(0);
+	DrawPinIcon(&output, IsPinLinked(output.ID), (int)(alpha * 255));
+	ImGui::EndHorizontal();
+	ImGui::PopStyleVar();
+	builder.EndPad();
       }
 
       // draws input pads on  nodes
@@ -1450,21 +1534,29 @@ void Application_Frame() {
 
 	} else if (input.Type == PinType::DOUBLE) {
 	  ImGui::PushItemWidth(200);
-	  if (ImGui::InputDouble("", &input.valued)) {
-	    node.propogate_update = true;
-	    printf("double is up dated\n");
-	    if (input.valued < input.mind) {
-	      input.valued = input.mind;
-	    } else if (input.valued > input.maxd) {
-	      input.valued = input.maxd;
+	  double new_val = input.valued;
+	  if (ImGui::InputDouble("", &new_val)) {
+	    if (new_val < input.mind) {
+	      new_val = input.mind;	      
+	    } else if (new_val > input.maxd) {
+	      new_val = input.maxd;
 	    }
-	    printf("double : %f\n", input.valued);
-	    
-	    gegl_node_set(node.gegl_node, input.Name.c_str(), input.valued, NULL);
+
+	    if (new_val != input.valued) {
+	      input.prev_valued = input.valued;
+	      input.valued = new_val;
+	      node.propogate_update = true;
+	      printf("double is updated\n");
+	      printf("new_va : %f\n", new_val);
+	      printf("double : %f\n", input.valued);
+	      printf("min : %f\n", input.mind);
+	      printf("max : %f\n", input.maxd);
+	      gegl_node_set(node.gegl_node, input.Name.c_str(), input.valued, NULL);
+	    }	                
 	  }
 
 	} else if (input.Type == PinType::STRING) {	  
-	  ImGui::PushItemWidth(80);
+	  // ImGui::PushItemWidth(80);
 	  if(ImGui::InputText("", (char *)input.value, 250)) {
 	    node.propogate_update = true;
             
@@ -1477,59 +1569,6 @@ void Application_Frame() {
 	if(node.propogate_update) {
 	  propogate_update(node.ID);
 	}	
-      }
-
-      // spacer between input and output pads
-      if (isSimple) {
-	builder.Middle();
-
-	ImGui::Spring(1, 0);
-	ImGui::TextUnformatted(node.Name.c_str());
-	ImGui::Spring(1, 0);
-      }
-
-      // draws output pads
-      for (auto& output : node.Outputs) {
-	if (!isSimple && output.Type == PinType::DELEGATE)
-	  continue;
-
-	auto alpha = ImGui::GetStyle().Alpha;
-	if (newLinkPin && !CanCreateLink(newLinkPin, &output) && &output != newLinkPin)
-	  alpha = alpha * (48.0f / 255.0f);
-
-	ImGui::PushStyleVar(ImGuiStyleVar_Alpha, alpha);
-	builder.BeginOutputPad(output.ID);
-	ImGui::BeginHorizontal((void *)&output.Title);
-	if (output.Type == PinType::STRING)
-	{
-	  static char buffer[128] = "Edit Me\nMultiline!";
-	  static bool wasActive = false;
-
-	  ImGui::PushItemWidth(100.0f);
-	  ImGui::InputText("##edit", buffer, 127);
-	  ImGui::PopItemWidth();
-	  if (ImGui::IsItemActive() && !wasActive)
-	  {
-	    editor->EnableShortcuts(false);
-	    wasActive = true;
-	  }
-	  else if (!ImGui::IsItemActive() && wasActive)
-	  {
-	    editor->EnableShortcuts(true);
-	    wasActive = false;
-	  }
-	  ImGui::Spring(0);
-	}
-	if (!output.Name.empty())
-	{
-	  ImGui::Spring(0);
-	  ImGui::TextUnformatted(output.Name.c_str());
-	}
-	ImGui::Spring(0);
-	DrawPinIcon(&output, IsPinLinked(output.ID), (int)(alpha * 255));
-	ImGui::EndHorizontal();
-	ImGui::PopStyleVar();
-	builder.EndPad();
       }
 
       builder.End();

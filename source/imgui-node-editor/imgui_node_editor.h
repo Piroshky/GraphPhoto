@@ -1031,7 +1031,7 @@ struct EditorAction {
 
   virtual AcceptResult Accept(const Control& control) = 0;
   virtual bool Process(const Control& control) = 0;
-  virtual void Reject() {} // celled when Accept return 'Possible' and was rejected
+  virtual void Reject() {} // called when Accept return 'Possible' and was rejected
 
   virtual ImGuiMouseCursor GetCursor() { return ImGuiMouseCursor_Arrow; }
 
