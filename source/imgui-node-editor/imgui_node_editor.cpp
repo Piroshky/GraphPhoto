@@ -554,8 +554,8 @@ void EditorContext::BeginNode(NodeId id) {
   m_NodeBuilder.Begin(id);
 }
 
-void EditorContext::BeginPin(PinId id, PinDirection kind) {
-  m_NodeBuilder.BeginPin(id, kind);
+void EditorContext::BeginPin(PinId id) {
+  m_NodeBuilder.BeginPin(id);
 }
 
 void EditorContext::PinRect(const ImVec2& a, const ImVec2& b) {
@@ -982,33 +982,27 @@ PinId NodeEditor::EditorContext::GetDraggedPin() {
 }
 
 
-void NodeBuilder::Begin(NodeId nodeId)
-{
+void NodeBuilder::Begin(NodeId nodeId) {
   IM_ASSERT(nullptr == m_CurrentNode);
 
   m_CurrentNode = Editor->GetNode(nodeId);
 
-  if (m_CurrentNode->m_RestoreState)
-  {
+  if (m_CurrentNode->m_RestoreState) {
     Editor->RestoreNodeState(m_CurrentNode);
     m_CurrentNode->m_RestoreState = false;
   }
 
-  if (m_CurrentNode->m_CenterOnScreen)
-  {
+  if (m_CurrentNode->m_CenterOnScreen) {
     auto bounds = Editor->GetViewRect();
     auto offset = bounds.GetCenter() - m_CurrentNode->m_Bounds.GetCenter();
 
-    if (ImLengthSqr(offset) > 0)
-    {
-      if (IsGroup(m_CurrentNode))
-      {
+    if (ImLengthSqr(offset) > 0) {
+      if (IsGroup(m_CurrentNode)) {
 	std::vector<Node*> groupedNodes;
 	m_CurrentNode->GetGroupedNodes(groupedNodes);
 	groupedNodes.push_back(m_CurrentNode);
 
-	for (auto node : groupedNodes)
-	{
+	for (auto node : groupedNodes) {
 	  node->m_Bounds.Translate(ImFloor(offset));
 	  node->m_GroupBounds.Translate(ImFloor(offset));
 	  Editor->MakeDirty(SaveReasonFlags::Position | SaveReasonFlags::User, node);
@@ -1060,7 +1054,10 @@ void NodeBuilder::Begin(NodeId nodeId)
   ImGui::BeginGroup();
 
   // Apply frame padding. Begin inner group if necessary.
-  if (editorStyle.NodePadding.x != 0 || editorStyle.NodePadding.y != 0 || editorStyle.NodePadding.z != 0 || editorStyle.NodePadding.w != 0)
+  if (editorStyle.NodePadding.x != 0 ||
+      editorStyle.NodePadding.y != 0 ||
+      editorStyle.NodePadding.z != 0 ||
+      editorStyle.NodePadding.w != 0)
   {
     ImGui::SetCursorPos(ImGui::GetCursorPos() + ImVec2(editorStyle.NodePadding.x, editorStyle.NodePadding.y));
     ImGui::BeginGroup();
@@ -1116,14 +1113,14 @@ void NodeBuilder::End()
   m_CurrentNode = nullptr;
 }
 
-void NodeBuilder::BeginPin(PinId pinId, PinDirection kind) {
+void NodeBuilder::BeginPin(PinId pinId) {
   IM_ASSERT(nullptr != m_CurrentNode);
   IM_ASSERT(nullptr == m_CurrentPin);
   IM_ASSERT(false   == m_IsGroup);
 
   auto& editorStyle = Editor->GetStyle();
 
-  m_CurrentPin = Editor->GetPin(pinId, kind);
+  m_CurrentPin = Editor->GetPin(pinId);
   m_CurrentPin->m_Node = m_CurrentNode;
 
   m_CurrentPin->m_IsLive      = true;
@@ -1135,7 +1132,7 @@ void NodeBuilder::BeginPin(PinId pinId, PinDirection kind) {
   m_CurrentPin->m_Radius      = editorStyle.PinRadius;
   m_CurrentPin->m_ArrowSize   = editorStyle.PinArrowSize;
   m_CurrentPin->m_ArrowWidth  = editorStyle.PinArrowWidth;
-  m_CurrentPin->m_Dir         = kind == PinDirection::OUTPUT ? editorStyle.SourceDirection : editorStyle.TargetDirection;
+  m_CurrentPin->m_Dir         = (m_CurrentPin->m_Kind == PinDirection::OUTPUT) ? editorStyle.SourceDirection : editorStyle.TargetDirection;
   m_CurrentPin->m_Strength    = editorStyle.LinkStrength;
 
   m_CurrentPin->m_PreviousPin = m_CurrentNode->m_LastPin;
@@ -1937,9 +1934,9 @@ bool EditorContext::IsActive()
   return m_IsWindowActive;
 }
 
-Pin* EditorContext::CreatePin(PinId id, PinDirection kind)
-{
+Pin* EditorContext::CreatePin(PinId id, PinDirection kind) {
   IM_ASSERT(nullptr == FindObject(id));
+  printf("Creating UIPin %d\n", id.Get());
   auto pin = new Pin(this, id, kind);
   m_Pins.push_back({id, pin});
   std::sort(m_Pins.begin(), m_Pins.end());
@@ -2534,16 +2531,13 @@ Object* EditorContext::FindObject(ObjectId id)
 }
 
 
-
-Pin* EditorContext::GetPin(PinId id, PinDirection kind)
-{
-    if (auto pin = FindPin(id))
-    {
-        pin->m_Kind = kind;
-        return pin;
-    }
-    else
-        return CreatePin(id, kind);
+Pin* EditorContext::GetPin(PinId id) {
+  if (auto pin = FindPin(id)) {
+    return pin;
+  } else {
+    printf("ERROR: could not get uipin %d\n", id.Get());
+    return nullptr;
+  }
 }
 
 Link* EditorContext::GetLink(LinkId id)

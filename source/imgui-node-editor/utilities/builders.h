@@ -27,6 +27,7 @@ struct BlueprintNodeBuilder {
   void Header(const ImVec4& color = ImVec4(1, 1, 1, 1));
   void EndHeader();
 
+  void BeginPad(PinId id);
   void BeginInputPad(PinId id);
   void BeginOutputPad(PinId id);
   void EndPad();
@@ -44,6 +45,7 @@ private:
         Input,
         Output,
         Middle,
+	Pad,
         End
     };
 

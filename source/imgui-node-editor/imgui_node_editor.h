@@ -784,7 +784,7 @@ struct NodeBuilder {
   void Begin(NodeId nodeId);
   void End();
 
-  void BeginPin(PinId pinId, PinDirection kind);
+  void BeginPin(PinId pinId);
   void EndPin();
 
   void PinRect(const ImVec2& a, const ImVec2& b);
@@ -1627,7 +1627,7 @@ struct EditorContext {
 
   void BeginNode(NodeId id);
   void EndNode();
-  void BeginPin(PinId id, PinDirection kind);
+  void BeginPin(PinId id);
   void EndPin();
 
   void PinRect(const ImVec2& a, const ImVec2& b);
@@ -1763,7 +1763,7 @@ struct EditorContext {
   Object* FindObject(ObjectId id);
 
   Node*  GetNode(NodeId id);
-  Pin*   GetPin(PinId id, PinDirection kind);
+  Pin*   GetPin(PinId id);
   Link*  GetLink(LinkId id);
 
   Link* FindLinkAt(const ImVec2& p);
