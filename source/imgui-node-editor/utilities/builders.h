@@ -66,7 +66,6 @@ private:
     ImVec2      HeaderMax;
     ImVec2      ContentMin;
     ImVec2      ContentMax;
-    bool        HasHeader;
 };
 
 

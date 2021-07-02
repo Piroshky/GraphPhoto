@@ -547,6 +547,10 @@ void update_ui_node_properties(NodeId node_id) {
   }
 }
 
+void create_pad() {
+  
+}
+
 // creates a ui node and sets its gegl_node member to the appropriate gegl node
 NodeId create_gegl_node(char *name) {
   GeglNode *gn = gegl_node_new_child(graph, "operation", name, NULL);
@@ -654,8 +658,7 @@ NodeId create_gegl_node(char *name) {
       /* 				  NULL); */
       /* g_free (property_blurb); */
       /* g_free (default_string); */
-      
-      
+            
       node->Inputs.emplace_back(new_pin);
       editor->CreatePin(new_pin.ID, PinDirection::INPUT);
     }
@@ -693,7 +696,9 @@ NodeId create_hb_canvas_node() {
   int nid = GetNextId();
   s_Nodes.emplace_back(nid, "Canvas", ImColor(255, 128, 128));
   Node *node = &s_Nodes.back();
-  node->Inputs.emplace_back(GetNextId(), nid, "input", PinType::GEGL_BUFFER);
+  int id = GetNextId();
+  node->Inputs.emplace_back(id, nid, "input", PinType::GEGL_BUFFER);
+  editor->CreatePin(id, PinDirection::INPUT);
   node->Name = "Canvas";
   node->kind = node_kind::CANVAS;
   GeglNode *sink = gegl_node_new_child(graph,
@@ -1030,8 +1035,7 @@ void ShowStyleEditor(bool* show = nullptr) {
   ImGui::Spacing();
 
   ImGui::PushItemWidth(-160);
-  for (int i = 0; i < ed::StyleColor_Count; ++i)
-  {
+  for (int i = 0; i < ed::StyleColor_Count; ++i) {
     auto name = editor->GetStyleColorName((ed::StyleColor)i);
     if (!filter.PassFilter(name))
       continue;
@@ -1479,15 +1483,16 @@ void Application_Frame() {
       builder.Begin(node.ID);
       
       builder.Header(node.Color);
-      ImGui::Spring(0);
+      // ImGui::Spring(0); // horizontally centers
       ImGui::TextUnformatted(node.Name.c_str());
-      ImGui::Spring(1);
+      ImGui::Spring(1); // vertically centers
       ImGui::Dummy(ImVec2(0, 28));
-      ImGui::Spring(0);
+      ImGui::Spring(0); // who knows
       builder.EndHeader();
 
-      // ImGui::BeginVertical("pads", ImVec2(0, 0), 0.0f);
-      
+      // ImGui::Spring();
+      ImGui::BeginVertical("pads");//, ImVec2(0, 0), 1.0f);
+
       // draws output pads
       for (auto& output : node.Outputs) {
 	auto alpha = ImGui::GetStyle().Alpha;
@@ -1498,16 +1503,15 @@ void Application_Frame() {
 
 	ImGui::PushStyleVar(ImGuiStyleVar_Alpha, alpha);
 	builder.BeginPad(output.ID);
-        
+	ImGui::Spring(0);
 	ImGui::BeginHorizontal((void *)&output.Title);       
-        {
-	  if (!output.Name.empty()) {
-	    ImGui::Spring(0); // horizonatally aligns pad name in pad          
-	    ImGui::TextUnformatted(output.Name.c_str());
-	  }
-	  ImGui::Spring(0); // vertically aligns pad name in pad
-	  DrawPinIcon(&output, IsPinLinked(output.ID), (int)(alpha * 255));
+        
+	if (!output.Name.empty()) {
+	  ImGui::Spring(0); // horizonatally aligns pad name in pad          
+	  ImGui::TextUnformatted(output.Name.c_str());
 	}
+	ImGui::Spring(0); // vertically aligns pad name in pad
+	DrawPinIcon(&output, IsPinLinked(output.ID), (int)(alpha * 255));
 	ImGui::EndHorizontal();
 	
 	ImGui::PopStyleVar();
@@ -1515,77 +1519,88 @@ void Application_Frame() {
       }
 
       // draws input pads on  nodes
-      // for (auto& input : node.inputs) {
-      // 	auto alpha = imgui::getstyle().alpha;
-      // 	if (newlinkpin && !cancreatelink(newlinkpin, &input) && &input != newlinkpin)
-      // 	  alpha = alpha * (48.0f / 255.0f);
+      for (auto& input : node.Inputs) {
+	auto alpha = ImGui::GetStyle().Alpha;
+	if (newLinkPin && !CanCreateLink(newLinkPin, &input) && &input != newLinkPin)
+	  alpha = alpha * (48.0f / 255.0f);
 
-      // 	builder.beginpad(input.id);
-      // 	imgui::pushstylevar(imguistylevar_alpha, alpha);
-      // 	imgui::beginhorizontal((void *)&input.title);
-      // 	drawpinicon(&input, ispinlinked(input.id), (int)(alpha * 255));
+	builder.BeginPad(input.ID);
+	ImGui::PushStyleVar(ImGuiStyleVar_Alpha, alpha);
+	ImGui::BeginHorizontal((void *)&input.Title);
+	DrawPinIcon(&input, IsPinLinked(input.ID), (int)(alpha * 255));
 
-      // 	imgui::spring(0);
-      // 	// imgui::sameline();
-      // 	imgui::textunformatted(input.title.c_str());
-      // 	imgui::spring(0);
-      // 	imgui::endhorizontal();
+	ImGui::Spring(0);
+
+	ImGui::TextUnformatted(input.Title.c_str());
+	ImGui::Spring(0);
+	ImGui::EndHorizontal();
 	
-      // 	// imgui::newline();
-      // 	if (input.type == pintype::boolean) {
-      // 	  if (imgui::checkbox("boolean", (bool *)&input.value)) {
-      // 	    node.propogate_update = true;
-      // 	    gegl_node_set(node.gegl_node, input.name.c_str(), input.value, null);            
-      // 	  }
+	// ImGui::NewLine();
+	if (input.Type == PinType::BOOLEAN) {
+	  if (ImGui::Checkbox("boolean", (bool *)&input.value)) {
+	    node.propogate_update = true;
+	    gegl_node_set(node.gegl_node, input.Name.c_str(), input.value, NULL);            
+	  }
 
-      // 	} else if (input.type == pintype::int) {
-      // 	  if (imgui::dragint("", (int *)&input.value, 0.2f, input.min, input.max)) {
-      // 	    node.propogate_update = true;
-      // 	    gegl_node_set(node.gegl_node, input.name.c_str(), input.value, null);            
-      // 	  }
+	} else if (input.Type == PinType::INT) {
+	  if (ImGui::DragInt("", (int *)&input.value, 0.2f, input.min, input.max)) {
+	    node.propogate_update = true;
+	    gegl_node_set(node.gegl_node, input.Name.c_str(), input.value, NULL);            
+	  }
 
-      // 	} else if (input.type == pintype::double) {
-      // 	  imgui::pushitemwidth(200);
-      // 	  double new_val = input.valued;
-      // 	  if (imgui::inputdouble("", &new_val)) {
-      // 	    if (new_val < input.mind) {
-      // 	      new_val = input.mind;	      
-      // 	    } else if (new_val > input.maxd) {
-      // 	      new_val = input.maxd;
-      // 	    }
+	} else if (input.Type == PinType::DOUBLE) {
+	  ImGui::PushItemWidth(200);
+	  double new_val = input.valued;
+	  if (ImGui::InputDouble("", &new_val)) {
+	    if (new_val < input.mind) {
+	      new_val = input.mind;	      
+	    } else if (new_val > input.maxd) {
+	      new_val = input.maxd;
+	    }
 
-      // 	    if (new_val != input.valued) {
-      // 	      input.prev_valued = input.valued;
-      // 	      input.valued = new_val;
-      // 	      node.propogate_update = true;
-      // 	      printf("double is updated\n");
-      // 	      printf("new_va : %f\n", new_val);
-      // 	      printf("double : %f\n", input.valued);
-      // 	      printf("min : %f\n", input.mind);
-      // 	      printf("max : %f\n", input.maxd);
-      // 	      gegl_node_set(node.gegl_node, input.name.c_str(), input.valued, null);
-      // 	    }	                
-      // 	  }
+	    if (new_val != input.valued) {
+	      input.prev_valued = input.valued;
+	      input.valued = new_val;
+	      node.propogate_update = true;
+	      printf("double is updated\n");
+	      printf("new_va : %f\n", new_val);
+	      printf("double : %f\n", input.valued);
+	      printf("min : %f\n", input.mind);
+	      printf("max : %f\n", input.maxd);
+	      gegl_node_set(node.gegl_node, input.Name.c_str(), input.valued, NULL);
+	    }	                
+	  }
 
-      // 	} else if (input.type == pintype::string) {	  
-      // 	  imgui::pushitemwidth(200);
-      // 	  if(imgui::inputtext("", (char *)input.value, 250)) {
-      // 	    node.propogate_update = true;
+	} else if (input.Type == PinType::STRING) {	  
+	  ImGui::PushItemWidth(200);
+	  if(ImGui::InputText("", (char *)input.value, 250)) {
+	    node.propogate_update = true;
             
-      // 	    gegl_node_set(node.gegl_node, input.name.c_str(), input.value, null);
-      // 	  }
-      // 	}
-      // 	imgui::popstylevar();
-      // 	builder.endpad();
+	    gegl_node_set(node.gegl_node, input.Name.c_str(), input.value, NULL);
+	  }
+	}
+	ImGui::PopStyleVar();
+	builder.EndPad();
 
-      // 	if(node.propogate_update) {
-      // 	  propogate_update(node.id);
-      // 	}	
-      // }
-      
-      // ImGui::EndVertical();
+	if(node.propogate_update) {
+	  propogate_update(node.ID);
+	}	
+      }
+            
+      ImGui::EndVertical(); // pads
+      // // pad div
+      // ImGui::GetWindowDrawList()->AddRect(ImGui::GetItemRectMin(),
+      // 					  ImGui::GetItemRectMax(),
+      // 					  IM_COL32(255, 0, 0, 255));
+           
       
       builder.End();
+
+      // node id div?
+      // ImGui::GetWindowDrawList()->AddRect(ImGui::GetItemRectMin(),
+      // 					  ImGui::GetItemRectMax(),
+      // 					  IM_COL32(  0,   0, 255, 255));
+      
     }
 
     // draw links

@@ -410,6 +410,7 @@ inline NodeRegion operator &(NodeRegion lhs, NodeRegion rhs) {
 struct Node final: Object {
   using IdType = NodeId;
 
+  int thing = 0;
   NodeId   m_ID;
   NodeType m_Type;
   ImRect   m_Bounds;
@@ -688,8 +689,8 @@ enum StyleColor {
     Style()
     {
         NodePadding             = ImVec4(8, 8, 8, 8);
-        NodeRounding            = 12.0f;
-        NodeBorderWidth         = 1.5f;
+        NodeRounding            = 2.5f;
+        NodeBorderWidth         = 1.3f;
         HoveredNodeBorderWidth  = 3.5f;
         SelectedNodeBorderWidth = 3.5f;
         PinRounding             = 4.0f;
@@ -711,10 +712,10 @@ enum StyleColor {
         GroupRounding           = 6.0f;
         GroupBorderWidth        = 1.0f;
 
-        Colors[StyleColor_Bg]                 = ImColor( 60,  60,  70, 200);
-        Colors[StyleColor_Grid]               = ImColor(120, 120, 120,  40);
+        Colors[StyleColor_Bg]                 = ImColor( 35,  35,  35, 255);
+        Colors[StyleColor_Grid]               = ImColor(  5,   5,   5, 255);
         Colors[StyleColor_NodeBg]             = ImColor( 32,  32,  32, 200);
-        Colors[StyleColor_NodeBorder]         = ImColor(255, 255, 255,  96);
+        Colors[StyleColor_NodeBorder]         = ImColor(237, 237, 237, 255);
         Colors[StyleColor_HovNodeBorder]      = ImColor( 50, 176, 255, 255);
         Colors[StyleColor_SelNodeBorder]      = ImColor(255, 176,  50, 255);
         Colors[StyleColor_NodeSelRect]        = ImColor(  5, 130, 255,  64);

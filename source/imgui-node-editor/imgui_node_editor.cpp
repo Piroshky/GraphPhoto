@@ -1181,10 +1181,10 @@ void NodeBuilder::EndPin() {
   }
 
   // #debug: Draw pin bounds
-  //ImGui::GetWindowDrawList()->AddRect(m_CurrentPin->m_Bounds.Min, m_CurrentPin->m_Bounds.Max, IM_COL32(255, 255, 0, 255));
+  ImGui::GetWindowDrawList()->AddRect(m_CurrentPin->m_Bounds.Min, m_CurrentPin->m_Bounds.Max, IM_COL32(255, 255, 0, 255));
 
   // #debug: Draw pin pivot rectangle
-  //ImGui::GetWindowDrawList()->AddRect(m_CurrentPin->m_Pivot.Min, m_CurrentPin->m_Pivot.Max, IM_COL32(255, 0, 255, 255));
+  ImGui::GetWindowDrawList()->AddRect(m_CurrentPin->m_Pivot.Min, m_CurrentPin->m_Pivot.Max, IM_COL32(255, 0, 255, 255));
 
   m_CurrentPin = nullptr;
 }
@@ -1250,11 +1250,10 @@ ImDrawList* NodeBuilder::GetUserBackgroundDrawList() const {
   return GetUserBackgroundDrawList(m_CurrentNode);
 }
 
-//@todo bug is happeneing before here 2021-06-10 
 ImDrawList* NodeBuilder::GetUserBackgroundDrawList(Node* node) const {
   if (node && node->m_IsLive) {
 
-    auto drawList = ImGui::GetWindowDrawList(); // not happening here
+    auto drawList = ImGui::GetWindowDrawList();
 
     drawList->ChannelsSetCurrent(node->m_Channel + c_NodeUserBackgroundChannel);
 
@@ -2041,75 +2040,73 @@ bool Node::EndDrag()
     return m_Bounds.Min != m_DragStart;
 }
 
-void Node::Draw(ImDrawList* drawList, DrawFlags flags)
-{
-    if (flags == Object::None)
-    {
-        drawList->ChannelsSetCurrent(m_Channel + c_NodeBackgroundChannel);
+void Node::Draw(ImDrawList* drawList, DrawFlags flags) {
+  thing += 1;
+  if (flags == Object::None) {
+    drawList->ChannelsSetCurrent(m_Channel + c_NodeBackgroundChannel);
 
-        drawList->AddRectFilled(
-            m_Bounds.Min,
-            m_Bounds.Max,
-            m_Color, m_Rounding);
+    // draws node background
+    // drawList->AddRectFilled( 
+    //   m_Bounds.Min,
+    //   m_Bounds.Max,
+    //   m_Color,
+    //   m_Rounding
+    //   );
 
-        if (IsGroup(this))
-        {
-            drawList->AddRectFilled(
-                m_GroupBounds.Min,
-                m_GroupBounds.Max,
-                m_GroupColor, m_GroupRounding);
+    if (IsGroup(this)) {
+      drawList->AddRectFilled(
+	m_GroupBounds.Min,
+	m_GroupBounds.Max,
+	m_GroupColor, m_GroupRounding);
 
-            if (m_GroupBorderWidth > 0.0f)
-            {
-                FringeScaleScope fringe(1.0f);
+      if (m_GroupBorderWidth > 0.0f) {
+	FringeScaleScope fringe(1.0f);
 
-                drawList->AddRect(
-                    m_GroupBounds.Min,
-                    m_GroupBounds.Max,
-                    m_GroupBorderColor, m_GroupRounding, 15, m_GroupBorderWidth);
-            }
-        }
+	drawList->AddRect(
+	  m_GroupBounds.Min,
+	  m_GroupBounds.Max,
+	  m_GroupBorderColor, m_GroupRounding, 15, m_GroupBorderWidth);
+      }
+    }
 
 # if 0
-        // #debug: highlight group regions
-        auto drawRect = [drawList](const ImRect& rect, ImU32 color)
-        {
-            if (ImRect_IsEmpty(rect)) return;
-            drawList->AddRectFilled(rect.Min, rect.Max, color);
-        };
+    // #debug: highlight group regions
+    auto drawRect = [drawList](const ImRect& rect, ImU32 color)
+    {
+      if (ImRect_IsEmpty(rect)) return;
+      drawList->AddRectFilled(rect.Min, rect.Max, color);
+    };
 
-        drawRect(GetRegionBounds(NodeRegion::Top), IM_COL32(255, 0, 0, 64));
-        drawRect(GetRegionBounds(NodeRegion::Bottom), IM_COL32(255, 0, 0, 64));
-        drawRect(GetRegionBounds(NodeRegion::Left), IM_COL32(0, 255, 0, 64));
-        drawRect(GetRegionBounds(NodeRegion::Right), IM_COL32(0, 255, 0, 64));
-        drawRect(GetRegionBounds(NodeRegion::TopLeft), IM_COL32(255, 0, 255, 64));
-        drawRect(GetRegionBounds(NodeRegion::TopRight), IM_COL32(255, 0, 255, 64));
-        drawRect(GetRegionBounds(NodeRegion::BottomLeft), IM_COL32(255, 0, 255, 64));
-        drawRect(GetRegionBounds(NodeRegion::BottomRight), IM_COL32(255, 0, 255, 64));
-        drawRect(GetRegionBounds(NodeRegion::Center), IM_COL32(0, 0, 255, 64));
-        drawRect(GetRegionBounds(NodeRegion::Header), IM_COL32(0, 255, 255, 64));
+    drawRect(GetRegionBounds(NodeRegion::Top), IM_COL32(255, 0, 0, 64));
+    drawRect(GetRegionBounds(NodeRegion::Bottom), IM_COL32(255, 0, 0, 64));
+    drawRect(GetRegionBounds(NodeRegion::Left), IM_COL32(0, 255, 0, 64));
+    drawRect(GetRegionBounds(NodeRegion::Right), IM_COL32(0, 255, 0, 64));
+    drawRect(GetRegionBounds(NodeRegion::TopLeft), IM_COL32(255, 0, 255, 64));
+    drawRect(GetRegionBounds(NodeRegion::TopRight), IM_COL32(255, 0, 255, 64));
+    drawRect(GetRegionBounds(NodeRegion::BottomLeft), IM_COL32(255, 0, 255, 64));
+    drawRect(GetRegionBounds(NodeRegion::BottomRight), IM_COL32(255, 0, 255, 64));
+    drawRect(GetRegionBounds(NodeRegion::Center), IM_COL32(0, 0, 255, 64));
+    drawRect(GetRegionBounds(NodeRegion::Header), IM_COL32(0, 255, 255, 64));
 # endif
 
-        DrawBorder(drawList, m_BorderColor, m_BorderWidth);
-    }
-    else if (flags & Selected)
-    {
-        const auto  borderColor = Editor->GetColor(StyleColor_SelNodeBorder);
-        const auto& editorStyle = Editor->GetStyle();
+    DrawBorder(drawList, m_BorderColor, m_BorderWidth);
+  }
+  else if (flags & Selected) {
+    const auto  borderColor = Editor->GetColor(StyleColor_SelNodeBorder);
+    const auto& editorStyle = Editor->GetStyle();
 
-        drawList->ChannelsSetCurrent(m_Channel + c_NodeBaseChannel);
+    drawList->ChannelsSetCurrent(m_Channel + c_NodeBaseChannel);
 
-        DrawBorder(drawList, borderColor, editorStyle.SelectedNodeBorderWidth);
-    }
-    else if (!IsGroup(this) && (flags & Hovered))
-    {
-        const auto  borderColor = Editor->GetColor(StyleColor_HovNodeBorder);
-        const auto& editorStyle = Editor->GetStyle();
+    DrawBorder(drawList, borderColor, editorStyle.SelectedNodeBorderWidth);
+  }
+  else if (!IsGroup(this) && (flags & Hovered)) {
+    const auto  borderColor = Editor->GetColor(StyleColor_HovNodeBorder);
+    const auto& editorStyle = Editor->GetStyle();
 
-        drawList->ChannelsSetCurrent(m_Channel + c_NodeBaseChannel);
+    drawList->ChannelsSetCurrent(m_Channel + c_NodeBaseChannel);
 
-        DrawBorder(drawList, borderColor, editorStyle.HoveredNodeBorderWidth);
-    }
+    DrawBorder(drawList, borderColor, editorStyle.HoveredNodeBorderWidth);
+  }
 }
 
 void Node::DrawBorder(ImDrawList* drawList, ImU32 color, float thickness)
@@ -5441,19 +5438,16 @@ void Style::PopColor(int count)
     }
 }
 
-void Style::PushVar(StyleVar varIndex, float value)
-{
-    auto* var = GetVarFloatAddr(varIndex);
-    IM_ASSERT(var != nullptr);
-    VarModifier modifier;
-    modifier.Index = varIndex;
-    modifier.Value = ImVec4(*var, 0, 0, 0);
-    *var = value;
-    m_VarStack.push_back(modifier);
+void Style::PushVar(StyleVar varIndex, float value) {
+  auto* var = GetVarFloatAddr(varIndex);
+  IM_ASSERT(var != nullptr);
+  VarModifier modifier;
+  modifier.Index = varIndex;
+  modifier.Value = ImVec4(*var, 0, 0, 0);
+  *var = value;  // saves the old value
+  m_VarStack.push_back(modifier);
 }
-
-void Style::PushVar(StyleVar varIndex, const ImVec2& value)
-{
+void Style::PushVar(StyleVar varIndex, const ImVec2& value) {
     auto* var = GetVarVec2Addr(varIndex);
     IM_ASSERT(var != nullptr);
     VarModifier modifier;
@@ -5462,9 +5456,7 @@ void Style::PushVar(StyleVar varIndex, const ImVec2& value)
     *var = value;
     m_VarStack.push_back(modifier);
 }
-
-void Style::PushVar(StyleVar varIndex, const ImVec4& value)
-{
+void Style::PushVar(StyleVar varIndex, const ImVec4& value) {
     auto* var = GetVarVec4Addr(varIndex);
     IM_ASSERT(var != nullptr);
     VarModifier modifier;
@@ -5480,7 +5472,7 @@ void Style::PopVar(int count)
     {
         auto& modifier = m_VarStack.back();
         if (auto floatValue = GetVarFloatAddr(modifier.Index))
-            *floatValue = modifier.Value.x;
+	  *floatValue = modifier.Value.x; //restores old value
         else if (auto vec2Value = GetVarVec2Addr(modifier.Index))
             *vec2Value = ImVec2(modifier.Value.x, modifier.Value.y);
         else if (auto vec4Value = GetVarVec4Addr(modifier.Index))
@@ -5519,8 +5511,7 @@ const char* Style::GetColorName(StyleColor colorIndex) const
     return "Unknown";
 }
 
-float* Style::GetVarFloatAddr(StyleVar idx)
-{
+float* Style::GetVarFloatAddr(StyleVar idx) {
     switch (idx)
     {
         case StyleVar_NodeRounding:             return &NodeRounding;

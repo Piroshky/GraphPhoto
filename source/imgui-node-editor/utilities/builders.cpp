@@ -21,13 +21,11 @@ util::BlueprintNodeBuilder::BlueprintNodeBuilder(ImTextureID texture, int textur
     HeaderTextureWidth(textureWidth),
     HeaderTextureHeight(textureHeight),
     CurrentNodeId(0),
-    CurrentStage(Stage::Invalid),
-    HasHeader(false)
+    CurrentStage(Stage::Invalid)
 {
 }
 
 void util::BlueprintNodeBuilder::Begin(ed::NodeId id) {
-    HasHeader  = false;
     HeaderMin = HeaderMax = ImVec2();
 
     // EditorContext *newref = ed::GetEditor();
@@ -53,16 +51,20 @@ void util::BlueprintNodeBuilder::End() {
     const auto halfBorderWidth = ed::GetEditor()->GetStyle().NodeBorderWidth * 0.5f;
 
     auto headerColor = IM_COL32(0, 0, 0, alpha) | (HeaderColor & IM_COL32(255, 255, 255, 0));
-    if ((HeaderMax.x > HeaderMin.x) && (HeaderMax.y > HeaderMin.y) && HeaderTextureId) {
+    if (// false && 
+	(HeaderMax.x > HeaderMin.x) && (HeaderMax.y > HeaderMin.y) && HeaderTextureId) {
       const auto uv = ImVec2(
 	(HeaderMax.x - HeaderMin.x) / (float)(4.0f * HeaderTextureWidth),
 	(HeaderMax.y - HeaderMin.y) / (float)(4.0f * HeaderTextureHeight));
 
+      // header background image
       drawList->AddImageRounded(HeaderTextureId,
 				HeaderMin - ImVec2(8 - halfBorderWidth, 4 - halfBorderWidth),
 				HeaderMax + ImVec2(8 - halfBorderWidth, 0),
 				ImVec2(0.0f, 0.0f), uv,
-				headerColor, ed::GetEditor()->GetStyle().NodeRounding, 1 | 2);
+				headerColor,
+				ed::GetEditor()->GetStyle().NodeRounding,
+				ImDrawCornerFlags_Top);
 
       auto headerSeparatorMin = ImVec2(HeaderMin.x, HeaderMax.y);
       auto headerSeparatorMax = ImVec2(HeaderMax.x, HeaderMin.y);
@@ -121,7 +123,6 @@ void util::BlueprintNodeBuilder::BeginPad(ed::PinId id) {
 
   ed::GetEditor()->BeginPin(id);
 
-  printf("begin pad\n");
   ImGui::BeginVertical(id.AsPointer());
 }
 
@@ -134,7 +135,6 @@ void util::BlueprintNodeBuilder::Middle() {
 
 void util::BlueprintNodeBuilder::EndPad() {  
   ImGui::EndVertical();
-  printf("ending pad\n");
   ed::GetEditor()->EndPin();
 }
 
@@ -155,9 +155,7 @@ void util::BlueprintNodeBuilder::SetStage(Stage stage) {
     break;
 
   case Stage::Header:
-    printf("2closing header\n");
     ImGui::EndHorizontal();
-    printf("2closed\n");
     HeaderMin = ImGui::GetItemRectMin();
     HeaderMax = ImGui::GetItemRectMax();
 
@@ -168,7 +166,7 @@ void util::BlueprintNodeBuilder::SetStage(Stage stage) {
   case Stage::Output:
   case Stage::Input:
   case Stage::Pad:
-    // ed::GetEditor()->PopStyleVar(2);
+    ed::GetEditor()->PopStyleVar(2);
 
     // ImGui::Spring(1, 0);
     ImGui::EndVertical();
@@ -189,41 +187,25 @@ void util::BlueprintNodeBuilder::SetStage(Stage stage) {
   switch (stage)
   {
   case Stage::Begin:
-    ImGui::BeginVertical("node");
+    ImGui::BeginVertical("node", ImVec2(0, 0), 0.0f); // left align
     break;
 
   case Stage::Header:
-    HasHeader = true;
-    printf("starting header\n");
     ImGui::BeginHorizontal("header");
     break;
 
   case Stage::Content:
     // if (oldStage == Stage::Begin)
     //   ImGui::Spring(0);
-    printf("starting content\n");
     ImGui::BeginHorizontal("content");
     // ImGui::Spring(0, 0);
     break;
-
-  // case Stage::Input:
-  //   ImGui::BeginVertical("inputs", ImVec2(0, 0), 0.0f);
-
-  //   ed::GetEditor()->PushStyleVar(ed::StyleVar_PivotAlignment, ImVec2(0, 0.5f));
-  //   ed::GetEditor()->PushStyleVar(ed::StyleVar_PivotSize, ImVec2(0, 0));
-
-  //   if (!HasHeader)
-  //     ImGui::Spring(1, 0);
-  //   break;
 
   case Stage::Input:
     ImGui::BeginVertical("inputs", ImVec2(0, 0), 0.0f);
 
     // ed::GetEditor()->PushStyleVar(ed::StyleVar_PivotAlignment, ImVec2(0, 0.5f));
     // ed::GetEditor()->PushStyleVar(ed::StyleVar_PivotSize, ImVec2(0, 0));
-
-    // if (!HasHeader)
-    //   ImGui::Spring(1, 0);
     break;
 
   case Stage::Output:
@@ -233,8 +215,6 @@ void util::BlueprintNodeBuilder::SetStage(Stage stage) {
     ed::GetEditor()->PushStyleVar(ed::StyleVar_PivotAlignment, ImVec2(0.0f, 0.5f));
     ed::GetEditor()->PushStyleVar(ed::StyleVar_PivotSize, ImVec2(0, 0));
 
-    // if (!HasHeader)
-    //   ImGui::Spring(1, 0);
     break;
     
   case Stage::Pad:
@@ -244,8 +224,6 @@ void util::BlueprintNodeBuilder::SetStage(Stage stage) {
     ed::GetEditor()->PushStyleVar(ed::StyleVar_PivotAlignment, ImVec2(0.0f, 0.5f));
     ed::GetEditor()->PushStyleVar(ed::StyleVar_PivotSize, ImVec2(0, 0));
 
-    // if (!HasHeader)
-    //   ImGui::Spring(1, 0);
     break;
 
   case Stage::Middle:
@@ -257,15 +235,17 @@ void util::BlueprintNodeBuilder::SetStage(Stage stage) {
     if (oldStage == Stage::Input)
       ImGui::Spring(1, 0);
     if (oldStage != Stage::Begin) {
-      printf("closing horizontal\n");
       ImGui::EndHorizontal(); //ends the content horizontal
-      printf("closed\n");
     }
     // ContentMin = ImGui::GetItemRectMin();
     // ContentMax = ImGui::GetItemRectMax();
 
     ImGui::Spring(0);
     ImGui::EndVertical();
+    // node div
+    ImGui::GetWindowDrawList()->AddRect(ImGui::GetItemRectMin(),
+					ImGui::GetItemRectMax(),
+					IM_COL32(255, 0, 255, 255));
     NodeMin = ImGui::GetItemRectMin();
     NodeMax = ImGui::GetItemRectMax();
     break;

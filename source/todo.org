@@ -9,6 +9,8 @@ is BuildNodes necessary?
 
 is Flow(link *) in editor context necessary?
 
+put saner limits on zoom levels
+
 
 * Rough spot : infinite buffers
 checkerboard, fractal require a crop to be put on them
