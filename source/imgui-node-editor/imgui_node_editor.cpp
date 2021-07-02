@@ -1184,7 +1184,7 @@ void NodeBuilder::EndPin() {
   ImGui::GetWindowDrawList()->AddRect(m_CurrentPin->m_Bounds.Min, m_CurrentPin->m_Bounds.Max, IM_COL32(255, 255, 0, 255));
 
   // #debug: Draw pin pivot rectangle
-  ImGui::GetWindowDrawList()->AddRect(m_CurrentPin->m_Pivot.Min, m_CurrentPin->m_Pivot.Max, IM_COL32(255, 0, 255, 255));
+  // ImGui::GetWindowDrawList()->AddRect(m_CurrentPin->m_Pivot.Min, m_CurrentPin->m_Pivot.Max, IM_COL32(255, 0, 255, 255));
 
   m_CurrentPin = nullptr;
 }
@@ -1935,7 +1935,6 @@ bool EditorContext::IsActive()
 
 Pin* EditorContext::CreatePin(PinId id, PinDirection kind) {
   IM_ASSERT(nullptr == FindObject(id));
-  printf("Creating UIPin %d\n", id.Get());
   auto pin = new Pin(this, id, kind);
   m_Pins.push_back({id, pin});
   std::sort(m_Pins.begin(), m_Pins.end());
@@ -2530,6 +2529,8 @@ Object* EditorContext::FindObject(ObjectId id)
 
 Pin* EditorContext::GetPin(PinId id) {
   if (auto pin = FindPin(id)) {
+    if (pin == nullptr) {
+    }
     return pin;
   } else {
     printf("ERROR: could not get uipin %d\n", id.Get());

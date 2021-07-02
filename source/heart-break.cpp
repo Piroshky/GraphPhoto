@@ -1474,14 +1474,10 @@ void Application_Frame() {
     util::BlueprintNodeBuilder builder(s_HeaderBackground, Application_GetTextureWidth(s_HeaderBackground), Application_GetTextureHeight(s_HeaderBackground));
     
     // draws the nodes we're interested in.
-    for (auto& node : s_Nodes) {
+    for (auto& node : s_Nodes) {      
+      if (node.Type != NodeStyle::Blueprint) {continue;}
       
-      if (node.Type != NodeStyle::Blueprint) {
-	continue;
-      }
-      
-      builder.Begin(node.ID);
-      
+      builder.Begin(node.ID);      
       builder.Header(node.Color);
       // ImGui::Spring(0); // horizontally centers
       ImGui::TextUnformatted(node.Name.c_str());
@@ -1490,49 +1486,22 @@ void Application_Frame() {
       ImGui::Spring(0); // who knows
       builder.EndHeader();
 
-      // ImGui::Spring();
-      ImGui::BeginVertical("pads");//, ImVec2(0, 0), 1.0f);
 
-      // draws output pads
-      for (auto& output : node.Outputs) {
-	auto alpha = ImGui::GetStyle().Alpha;
-
-	// grey out pad if you can't link to it
-	if (newLinkPin && !CanCreateLink(newLinkPin, &output) && &output != newLinkPin)
-	  alpha = alpha * (48.0f / 255.0f);
-
-	ImGui::PushStyleVar(ImGuiStyleVar_Alpha, alpha);
-	builder.BeginPad(output.ID);
-	ImGui::Spring(0);
-	ImGui::BeginHorizontal((void *)&output.Title);       
-        
-	if (!output.Name.empty()) {
-	  ImGui::Spring(0); // horizonatally aligns pad name in pad          
-	  ImGui::TextUnformatted(output.Name.c_str());
-	}
-	ImGui::Spring(0); // vertically aligns pad name in pad
-	DrawPinIcon(&output, IsPinLinked(output.ID), (int)(alpha * 255));
-	ImGui::EndHorizontal();
-	
-	ImGui::PopStyleVar();
-	builder.EndPad();
-      }
 
       // draws input pads on  nodes
+      // ImGui::BeginVertical("input pads");//, ImVec2(0, 0), 1.0f);
       for (auto& input : node.Inputs) {
 	auto alpha = ImGui::GetStyle().Alpha;
 	if (newLinkPin && !CanCreateLink(newLinkPin, &input) && &input != newLinkPin)
 	  alpha = alpha * (48.0f / 255.0f);
 
-	builder.BeginPad(input.ID);
+	builder.BeginInputPad(input.ID);
 	ImGui::PushStyleVar(ImGuiStyleVar_Alpha, alpha);
 	ImGui::BeginHorizontal((void *)&input.Title);
 	DrawPinIcon(&input, IsPinLinked(input.ID), (int)(alpha * 255));
 
 	ImGui::Spring(0);
-
 	ImGui::TextUnformatted(input.Title.c_str());
-	ImGui::Spring(0);
 	ImGui::EndHorizontal();
 	
 	// ImGui::NewLine();
@@ -1586,13 +1555,38 @@ void Application_Frame() {
 	  propogate_update(node.ID);
 	}	
       }
-            
-      ImGui::EndVertical(); // pads
-      // // pad div
-      // ImGui::GetWindowDrawList()->AddRect(ImGui::GetItemRectMin(),
-      // 					  ImGui::GetItemRectMax(),
-      // 					  IM_COL32(255, 0, 0, 255));
-           
+      ImGui::Spring();
+      // ImGui::EndVertical(); // input pads 
+
+
+      // draws output pads
+      for (auto& output : node.Outputs) {
+	auto alpha = ImGui::GetStyle().Alpha;
+
+	// grey out pad if you can't link to it
+	if (newLinkPin && !CanCreateLink(newLinkPin, &output) && &output != newLinkPin)
+	  alpha = alpha * (48.0f / 255.0f);
+
+	ImGui::PushStyleVar(ImGuiStyleVar_Alpha, alpha);
+	builder.BeginOutputPad(output.ID);
+	ImGui::BeginHorizontal((void *)&output.Title);
+	if (!output.Name.empty()) {
+	  ImGui::Spring(0); // horizonatally aligns pad name in pad
+	  ImGui::TextUnformatted(output.Name.c_str());
+	  ImGui::Spring(0); // vertically aligns pad name in pad
+	}
+
+	DrawPinIcon(&output, IsPinLinked(output.ID), (int)(alpha * 255));
+	ImGui::EndHorizontal();
+		
+	ImGui::PopStyleVar();
+	builder.EndPad();
+      }
+
+      // output pad div debug
+      ImGui::GetWindowDrawList()->AddRect(ImGui::GetItemRectMin(),
+					  ImGui::GetItemRectMax(),
+					  IM_COL32(255, 0, 0, 255));
       
       builder.End();
 

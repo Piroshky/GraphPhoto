@@ -97,7 +97,7 @@ void util::BlueprintNodeBuilder::BeginOutputPad(ed::PinId id) {
   SetStage(Stage::Output);
   // ImGui::Spring(0);
 
-  // ed::GetEditor()->BeginPin(id, PinDirection::OUTPUT);
+  ed::GetEditor()->BeginPin(id);
 
   ImGui::BeginVertical(id.AsPointer());
   // ImGui::Spring(0);
@@ -113,7 +113,7 @@ void util::BlueprintNodeBuilder::BeginInputPad(ed::PinId id) {
   //   ImGui::Spring(0);
   // }
 
-  // ed::GetEditor()->BeginPin(id, PinDirection::INPUT);
+  ed::GetEditor()->BeginPin(id);
 
   ImGui::BeginVertical(id.AsPointer());
 }
@@ -172,22 +172,12 @@ void util::BlueprintNodeBuilder::SetStage(Stage stage) {
     ImGui::EndVertical();
     break;
 
-  case Stage::Middle:
-    ImGui::EndVertical();
-    break;
-
-  // case Stage::Output:
-  //   ed::GetEditor()->PopStyleVar(2);
-
-  //   // ImGui::Spring(1, 0);
-  //   ImGui::EndVertical();
-  //   break;
   }
 ///
   switch (stage)
   {
   case Stage::Begin:
-    ImGui::BeginVertical("node", ImVec2(0, 0), 0.0f); // left align
+    ImGui::BeginVertical("node", ImVec2(0, 0), 0.0f);
     break;
 
   case Stage::Header:
@@ -204,32 +194,17 @@ void util::BlueprintNodeBuilder::SetStage(Stage stage) {
   case Stage::Input:
     ImGui::BeginVertical("inputs", ImVec2(0, 0), 0.0f);
 
-    // ed::GetEditor()->PushStyleVar(ed::StyleVar_PivotAlignment, ImVec2(0, 0.5f));
-    // ed::GetEditor()->PushStyleVar(ed::StyleVar_PivotSize, ImVec2(0, 0));
+    ed::GetEditor()->PushStyleVar(ed::StyleVar_PivotAlignment, ImVec2(0, 0.5f));
+    ed::GetEditor()->PushStyleVar(ed::StyleVar_PivotSize, ImVec2(0, 0));
     break;
 
   case Stage::Output:
     // ImGui::BeginVertical("outputs", ImVec2(0, 0), 0.0f);
     ImGui::BeginVertical("outputs", ImVec2(0, 0));
 
-    ed::GetEditor()->PushStyleVar(ed::StyleVar_PivotAlignment, ImVec2(0.0f, 0.5f));
+    ed::GetEditor()->PushStyleVar(ed::StyleVar_PivotAlignment, ImVec2(1.0f, 0.5f));
     ed::GetEditor()->PushStyleVar(ed::StyleVar_PivotSize, ImVec2(0, 0));
-
-    break;
-    
-  case Stage::Pad:
-    // ImGui::BeginVertical("outputs", ImVec2(0, 0), 0.0f);
-    ImGui::BeginVertical("pads", ImVec2(0, 0));
-
-    ed::GetEditor()->PushStyleVar(ed::StyleVar_PivotAlignment, ImVec2(0.0f, 0.5f));
-    ed::GetEditor()->PushStyleVar(ed::StyleVar_PivotSize, ImVec2(0, 0));
-
-    break;
-
-  case Stage::Middle:
-    ImGui::Spring(1);
-    ImGui::BeginVertical("middle", ImVec2(0, 0), 1.0f);
-    break;
+    break;   
 
   case Stage::End:
     if (oldStage == Stage::Input)
@@ -242,10 +217,10 @@ void util::BlueprintNodeBuilder::SetStage(Stage stage) {
 
     ImGui::Spring(0);
     ImGui::EndVertical();
-    // node div
-    ImGui::GetWindowDrawList()->AddRect(ImGui::GetItemRectMin(),
-					ImGui::GetItemRectMax(),
-					IM_COL32(255, 0, 255, 255));
+    // node div debug
+    // ImGui::GetWindowDrawList()->AddRect(ImGui::GetItemRectMin(),
+    // 					ImGui::GetItemRectMax(),
+    // 					IM_COL32(255, 0, 255, 255));
     NodeMin = ImGui::GetItemRectMin();
     NodeMax = ImGui::GetItemRectMax();
     break;
