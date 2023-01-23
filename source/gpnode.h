@@ -39,5 +39,9 @@ namespace GPNode {
   void InitializeNodeEditor();
   void BeginNodeEditor();
   void EndNodeEditor();
+
+  void BeginNode(int node_id);
+  void EndNode();
+
   extern NodeEditor *global_node_editor;
 }

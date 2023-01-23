@@ -17,7 +17,6 @@ void BeginNodeEditor() {
 
   //// Save mouse pos
   ImGuiIO& io = ImGui::GetIO();
-  global_node_editor->screen_space_MousePos = io.MousePos;
   
   //// Draw the canvas
   ImVec2 canvas_p0 = ImGui::GetCursorScreenPos();      // ImDrawList API uses screen coordinates!
@@ -36,7 +35,7 @@ void BeginNodeEditor() {
 
   // This will catch our interactions
   ImGui::InvisibleButton("canvas", canvas_sz, ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight);
-  //const bool is_hovered = ImGui::IsItemHovered(); // Hovered
+  const bool is_hovered = ImGui::IsItemHovered(); // Hovered
   const bool is_active = ImGui::IsItemActive();   // Held
 
   // Pan (we use a zero mouse threshold when there's no context menu)
@@ -49,13 +48,14 @@ void BeginNodeEditor() {
   }
 
   ImVec2 origin(canvas_p0.x + global_node_editor->canvas_scrolling.x, canvas_p0.y + global_node_editor->canvas_scrolling.y); // Canvas origin in screen space
-  global_node_editor->origin = origin;
+
   const ImVec2 mouse_widget_pos(io.MousePos.x - canvas_p0.x, io.MousePos.y - canvas_p0.y);
   const ImVec2 mouse_pos_in_canvas((io.MousePos.x - origin.x) / global_node_editor->zoom, (io.MousePos.y - origin.y) / global_node_editor->zoom);
   ImVec2 mpic;
   mpic.y = mouse_pos_in_canvas.y;
   mpic.x = mouse_pos_in_canvas.x;
-	    
+
+  global_node_editor->screen_space_MousePos = io.MousePos;
   io.MousePos = mpic;
   io.MouseDrawCursor = true;
 
@@ -74,6 +74,7 @@ void BeginNodeEditor() {
       origin.y = canvas_p0.y + global_node_editor->canvas_scrolling.y;
     }            
   }
+  global_node_editor->origin = origin;
 
   // Context menu (under default mouse threshold)
   ImVec2 drag_delta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Right);
@@ -139,8 +140,7 @@ void EndNodeEditor() {
   // printf("vert_count %d\n", vertices_count);
 
   // vtx_ix = draw_list->VtxBuffer.size();
-  // printf("after vtx_ix %d\n", vtx_ix);
-              
+  // printf("after vtx_ix %d\n", vtx_ix);           
 
   ImVec4 &clip_rect = draw_list->CmdBuffer[global_node_editor->canvas_clip_rect_ix].ClipRect;
 
@@ -150,8 +150,6 @@ void EndNodeEditor() {
   clip_rect.w = canvas_p1.y;
 	    
   ImGui::PopClipRect();
-
-
   
   //// Restore mouse position
   ImGuiIO& io = ImGui::GetIO();
@@ -189,11 +187,13 @@ void EndNode() {
   ImGui::EndGroup();
   current_node->size    = ImRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
   current_node->hovered = current_node->size.Contains(io.MousePos);
+  
 
   // Add node background
   draw_list->AddRectFilled(current_node->size.Min, current_node->size.Max, IM_COL32(100, 0, 100, 150));
 
   global_node_editor->current_node = NULL;
+  ImGui::PopID();
 }
 
 void BeginNodeTitle() {

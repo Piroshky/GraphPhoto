@@ -308,7 +308,7 @@ int main(int, char**)
 	  // printf("after vtx_ix %d\n", vtx_ix);
 
             
-	  ImGui::PopID();                  
+	  ImGui::PopID();
 
 	  ImVec4 &clip_rect = draw_list->CmdBuffer[canvas_clip_rect_ix].ClipRect;
 
@@ -325,11 +325,14 @@ int main(int, char**)
         }
 	if (ImGui::BeginTabItem("NodeEditor")) {
 	  ImGui::Checkbox("Enable grid", &GPNode::global_node_editor->grid_enabled);
+	  ImGui::Text("Zoom: %.1f", GPNode::global_node_editor->zoom);
 	  
 	  GPNode::BeginNodeEditor();
-
+	  GPNode::BeginNode(1);
+	  ImGui::Text("This is my test text");
+	  ImGui::Text("some more text");
+	  GPNode::EndNode();
 	  GPNode::EndNodeEditor();
-
 	  
 	  ImGui::EndTabItem();
 	}
