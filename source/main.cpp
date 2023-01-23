@@ -249,7 +249,7 @@ int main(int, char**)
 		node_pos += io.MouseDelta / zoom;
 	      } else {
 		node_selected = true;                
-              }              
+              }
 	    }
 	  }
 
