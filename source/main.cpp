@@ -289,7 +289,7 @@ int main(int, char**)
 	  draw_list->AddRectFilled(node_size.Min, node_size.Max, IM_COL32(200, 50, 100, 100));
 //	  ImGui::GetForegroundDrawList()->AddRectFilled(node_size.Min, node_size.Max, IM_COL32(00, 50, 200, 100));
 	  if(node_hovered) {
-	    draw_list->AddRect(node_size.Min, node_size.Max, IM_COL32(0, 255, 0, 255));            
+	    draw_list->AddRect(node_size.Min, node_size.Max, IM_COL32(0, 255, 0, 255));
 	  }
 
 
@@ -332,6 +332,13 @@ int main(int, char**)
 	  ImGui::Text("This is my test text");
 	  ImGui::Text("some more text");
 	  GPNode::EndNode();
+
+	  GPNode::BeginNode(2);
+	  ImGui::Text("This is my second node");
+	  ImGui::Text("some more text");
+	  GPNode::EndNode();
+
+	  
 	  GPNode::EndNodeEditor();
 	  
 	  ImGui::EndTabItem();

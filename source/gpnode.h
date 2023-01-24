@@ -8,13 +8,13 @@ namespace GPNode {
     int     id;
     ImVec2  pos;
     ImRect  size;
-    bool    hovered;
+    bool    mouse_in_node;
 
   node(int id)
     : id(id),
       pos({0,0}),
       size(0,0,0,0),
-      hovered(false)
+      mouse_in_node(false)
     {}
   };
 
@@ -23,10 +23,15 @@ namespace GPNode {
   
     node   *current_node;
     ImVec2  canvas_scrolling;
+    bool canvas_hovered;
     ImVec2  origin;
     bool    grid_enabled;
     double  zoom;
 
+    std::vector<int> selected_nodes;
+    bool    drag_selection;
+    ImVec2  drag_start;
+    
     ImVec2 screen_space_MousePos;
 
     //ImDrawList* draw_list;
@@ -42,6 +47,8 @@ namespace GPNode {
 
   void BeginNode(int node_id);
   void EndNode();
+
+node *GetNode(int node_id);
 
   extern NodeEditor *global_node_editor;
 }

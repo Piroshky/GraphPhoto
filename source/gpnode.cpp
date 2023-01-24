@@ -11,6 +11,8 @@ void InitializeNodeEditor() {
 
   global_node_editor->grid_enabled = true;
   global_node_editor->zoom = 1;
+  global_node_editor->drag_selection = false;
+  global_node_editor->canvas_hovered = false;
 }
 
 void BeginNodeEditor() {
@@ -35,7 +37,7 @@ void BeginNodeEditor() {
 
   // This will catch our interactions
   ImGui::InvisibleButton("canvas", canvas_sz, ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight);
-  const bool is_hovered = ImGui::IsItemHovered(); // Hovered
+  global_node_editor->canvas_hovered = ImGui::IsItemHovered(); // Hovered
   const bool is_active = ImGui::IsItemActive();   // Held
 
   // Pan (we use a zero mouse threshold when there's no context menu)
@@ -119,13 +121,68 @@ void EndNodeEditor() {
   
   // If mouse is down, and over a node, make the highest level node the selected node
 
-  //
+  // Add background to hovered nodes
+  ImDrawList* draw_list = ImGui::GetWindowDrawList();
+  ImGuiIO& io = ImGui::GetIO();
+  
+  bool mouse_in_any_node = false;
+  for (auto node : global_node_editor->node_pool) {
+    if(node.mouse_in_node && !global_node_editor->drag_selection) {
+      mouse_in_any_node = true;
+      draw_list->AddRect(node.size.Min, node.size.Max, IM_COL32(0, 255, 0, 255));
+      if (io.MouseDown[0]) {
+	global_node_editor->selected_nodes.clear();
+	global_node_editor->selected_nodes.push_back(node.id);
+      }
+    }
+  }
+
+  // clicking canvas starts drag selection, clears selected_nodes
+  if (global_node_editor->canvas_hovered && io.MouseDown[0]
+      && !mouse_in_any_node && !global_node_editor->drag_selection) {
+    global_node_editor->drag_selection = true;
+    global_node_editor->drag_start = io.MousePos;
+
+    global_node_editor->selected_nodes.clear();
+  }
+
+  // end drag selection
+  if (!io.MouseDown[0] && global_node_editor->drag_selection) {
+    global_node_editor->drag_selection = false;
+  }
+  
+  // draw drag selection @Cleanup
+  if (global_node_editor->drag_selection) {
+    draw_list->AddRectFilled(global_node_editor->drag_start, io.MousePos, IM_COL32(0, 0, 255, 50));
+    draw_list->AddRect(global_node_editor->drag_start, io.MousePos, IM_COL32(0, 0, 255, 255));
+
+    // add nodes in selection box to selected_nodes
+    ImRect selection_box = ImRect(global_node_editor->drag_start, io.MousePos);
+    if (selection_box.IsInverted()) {
+      selection_box = ImRect(io.MousePos, global_node_editor->drag_start);
+    }
+
+    global_node_editor->selected_nodes.clear();
+    for (auto node : global_node_editor->node_pool) {
+      if (node.size.Overlaps(selection_box)) {
+	global_node_editor->selected_nodes.push_back(node.id);
+      }
+    }
+    
+  }
+
+  // draw highlight on selected nodes
+  for (int id : global_node_editor->selected_nodes) {
+    node *n = GetNode(id); // @Cleanup very stupid n^2 stuff here, just temporary for now
+    draw_list->AddRect(n->size.Min, n->size.Max, IM_COL32(255, 0, 0, 255));
+  }
+
            
   // Transform canvas points to screen points
   ImVec2 origin = global_node_editor->origin;
   ImVec2 canvas_p0 = global_node_editor->canvas_p0;
   ImVec2 canvas_p1 = global_node_editor->canvas_p1;
-  ImDrawList* draw_list = ImGui::GetWindowDrawList();
+
   int vertices_count = draw_list->VtxBuffer.size() - global_node_editor->vtx_ix;
   
   //printf("vertices_count %d\n", vertices_count);
@@ -152,7 +209,6 @@ void EndNodeEditor() {
   ImGui::PopClipRect();
   
   //// Restore mouse position
-  ImGuiIO& io = ImGui::GetIO();
   io.MousePos = global_node_editor->screen_space_MousePos;
 }
 
@@ -185,8 +241,8 @@ void EndNode() {
   ImDrawList* draw_list = ImGui::GetWindowDrawList();
   
   ImGui::EndGroup();
-  current_node->size    = ImRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
-  current_node->hovered = current_node->size.Contains(io.MousePos);
+  current_node->size          = ImRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
+  current_node->mouse_in_node = current_node->size.Contains(io.MousePos);
   
 
   // Add node background
