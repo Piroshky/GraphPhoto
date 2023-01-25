@@ -156,12 +156,27 @@ void EndNodeEditor() {
     draw_list->AddRectFilled(global_node_editor->drag_start, io.MousePos, IM_COL32(0, 0, 255, 50));
     draw_list->AddRect(global_node_editor->drag_start, io.MousePos, IM_COL32(0, 0, 255, 255));
 
-    // add nodes in selection box to selected_nodes
-    ImRect selection_box = ImRect(global_node_editor->drag_start, io.MousePos);
-    if (selection_box.IsInverted()) {
-      selection_box = ImRect(io.MousePos, global_node_editor->drag_start);
+    
+    // create selection box, ImRect Min must be upper left, Max lower right
+    ImVec2 UL, LR;
+    if (global_node_editor->drag_start.x < io.MousePos.x) {
+      UL.x = global_node_editor->drag_start.x;
+      LR.x = io.MousePos.x;
+    } else {
+      UL.x = io.MousePos.x;
+      LR.x = global_node_editor->drag_start.x;
     }
+    if (global_node_editor->drag_start.y < io.MousePos.y) {
+      UL.y = global_node_editor->drag_start.y;
+      LR.y = io.MousePos.y;
+    } else {
+      UL.y = io.MousePos.y;
+      LR.y = global_node_editor->drag_start.y;
+    }    
 
+    ImRect selection_box = ImRect(UL, LR);
+
+    // add nodes in selection box to selected_nodes
     global_node_editor->selected_nodes.clear();
     for (auto node : global_node_editor->node_pool) {
       if (node.size.Overlaps(selection_box)) {
@@ -246,7 +261,6 @@ void EndNode() {
   current_node->size          = ImRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
   current_node->mouse_in_node = current_node->size.Contains(io.MousePos);
   
-
   // Add node background
   draw_list->AddRectFilled(current_node->size.Min, current_node->size.Max, IM_COL32(100, 0, 100, 150));
   
@@ -255,7 +269,6 @@ void EndNode() {
 }
 
 void BeginNodeTitle() {
-
 
 }
 }
