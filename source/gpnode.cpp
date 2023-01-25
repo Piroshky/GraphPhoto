@@ -214,6 +214,7 @@ void EndNodeEditor() {
 
 node *CreateNode(int node_id) {
   global_node_editor->node_pool.emplace_back(node_id);
+  global_node_editor->node_pool.back().pos = ImGui::GetCursorPos();
   return &global_node_editor->node_pool.back();
 }
 
@@ -230,7 +231,8 @@ node *GetNode(int node_id) {
 void BeginNode(int node_id) {
   node *current_node = GetNode(node_id); //Todo implement
   global_node_editor->current_node = current_node;
-  
+
+  ImGui::SetCursorScreenPos(current_node->pos);
   ImGui::PushID(current_node->id);
   ImGui::BeginGroup();
 }
@@ -247,7 +249,7 @@ void EndNode() {
 
   // Add node background
   draw_list->AddRectFilled(current_node->size.Min, current_node->size.Max, IM_COL32(100, 0, 100, 150));
-
+  
   global_node_editor->current_node = NULL;
   ImGui::PopID();
 }

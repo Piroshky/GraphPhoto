@@ -18,6 +18,9 @@
 
 #include "gpnode.h"
 
+// debug libs
+#include <string>
+
 // [Win32] Our example includes a copy of glfw3.lib pre-compiled with VS2010 to maximize ease of testing and compatibility with old VS compilers.
 // To link with VS2010-era libraries, VS2015+ requires linking with legacy_stdio_definitions.lib, which we do using this pragma.
 // Your own project should not be affected, as you are likely to link with a newer binary of GLFW that is adequate for your version of Visual Studio.
@@ -326,8 +329,15 @@ int main(int, char**)
 	if (ImGui::BeginTabItem("NodeEditor")) {
 	  ImGui::Checkbox("Enable grid", &GPNode::global_node_editor->grid_enabled);
 	  ImGui::Text("Zoom: %.1f", GPNode::global_node_editor->zoom);
+	  std::string selected_nodes = "";
+	  for (auto a : GPNode::global_node_editor->selected_nodes) {
+	    selected_nodes += std::to_string(a);
+	    selected_nodes += " ";
+	  }
+	  ImGui::Text("Selected Nodes: %s", selected_nodes.c_str());
 	  
 	  GPNode::BeginNodeEditor();
+	  
 	  GPNode::BeginNode(1);
 	  ImGui::Text("This is my test text");
 	  ImGui::Text("some more text");
@@ -338,6 +348,10 @@ int main(int, char**)
 	  ImGui::Text("some more text");
 	  GPNode::EndNode();
 
+	  GPNode::BeginNode(3);
+	  ImGui::Text("This is my third node");
+	  ImGui::Text("some more text");
+	  GPNode::EndNode();
 	  
 	  GPNode::EndNodeEditor();
 	  
