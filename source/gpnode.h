@@ -29,8 +29,9 @@ namespace GPNode {
     double  zoom;
 
     std::vector<int> selected_nodes;
-    bool    drag_selection;
-    ImVec2  drag_start;
+    bool    dragging_selected_nodes; // "dragging" here is not the same drag as below, this is for moving nodes.
+    bool    drag_selection;          // Whereas in these two drag refers to the click and drag selection box.
+    ImVec2  drag_start;              //
     
     ImVec2 screen_space_MousePos;
 
@@ -48,7 +49,8 @@ namespace GPNode {
   void BeginNode(int node_id);
   void EndNode();
 
-node *GetNode(int node_id);
+  node *GetNode(int node_id);
+  bool NodeSelected(int node_id);
 
   extern NodeEditor *global_node_editor;
 }

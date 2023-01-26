@@ -1,3 +1,4 @@
+#define IMGUI_DEFINE_MATH_OPERATORS
 #include "imgui_internal.h"
 #include "gpnode.h"
 
@@ -112,7 +113,26 @@ void BeginNodeEditor() {
 
   ImGui::SetCursorScreenPos({0,0});
   global_node_editor->vtx_ix = draw_list->VtxBuffer.size();
-  
+
+  bool mouse_in_any_selected_node = false;
+  if (io.MouseDown[0] && !global_node_editor->drag_selection && !global_node_editor->selected_nodes.empty()) {       
+    for (int node_id : global_node_editor->selected_nodes) {
+      node *n = GetNode(node_id);
+      if (n->mouse_in_node) {
+	mouse_in_any_selected_node = true;
+	break;
+      }
+    }
+  }
+  if (mouse_in_any_selected_node) {
+    ImVec2 drag_amount = io.MouseDelta / global_node_editor->zoom;
+    for (int node_id : global_node_editor->selected_nodes) {
+      node *n = GetNode(node_id);
+      n->pos += drag_amount;
+    }
+  }
+
+
 }
 
 void EndNodeEditor() {
@@ -130,7 +150,7 @@ void EndNodeEditor() {
     if(node.mouse_in_node && !global_node_editor->drag_selection) {
       mouse_in_any_node = true;
       draw_list->AddRect(node.size.Min, node.size.Max, IM_COL32(0, 255, 0, 255));
-      if (io.MouseDown[0]) {
+      if (io.MouseDown[0] && !NodeSelected(node.id)) {
 	global_node_editor->selected_nodes.clear();
 	global_node_editor->selected_nodes.push_back(node.id);
       }
@@ -241,6 +261,15 @@ node *GetNode(int node_id) {
     }
   }
   return CreateNode(node_id);
+}
+
+bool NodeSelected(int node_id) {
+  for (auto sn : global_node_editor->selected_nodes) {
+    if (sn == node_id) {
+      return true;
+    }
+  }
+  return false;
 }
 
 void BeginNode(int node_id) {
