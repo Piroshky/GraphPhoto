@@ -12,7 +12,7 @@ void InitializeNodeEditor() {
 
   global_node_editor->grid_enabled = true;
   global_node_editor->zoom = 1;
-  global_node_editor->drag_selection = false;
+  //global_node_editor->drag_selection = false;
   global_node_editor->canvas_hovered = false;
 }
 
@@ -89,8 +89,14 @@ void BeginNodeEditor() {
     ImGui::EndPopup();
   }
 
-  // Draw grid
-            
+  // Create 2 channels per node, one for background, one for main content
+  ImDrawListSplitter& splitter = draw_list->_Splitter;
+  int num_channels = 2 * global_node_editor->node_pool.size();
+  num_channels = (num_channels < 10) ? 10 : num_channels;
+  //printf("num_channels %d\n", num_channels);
+  splitter.Split(draw_list, 1 + num_channels);
+  
+  // Draw grid            
   ImVec2 canvas_clip_p0((canvas_p0.x - origin.x) / global_node_editor->zoom, (canvas_p0.y - origin.y) / global_node_editor->zoom);
   ImVec2 canvas_clip_p1((canvas_p1.x - origin.x) / global_node_editor->zoom, (canvas_p1.y - origin.y) / global_node_editor->zoom);
           
@@ -114,21 +120,28 @@ void BeginNodeEditor() {
   ImGui::SetCursorScreenPos({0,0});
   global_node_editor->vtx_ix = draw_list->VtxBuffer.size();
 
-  bool mouse_in_any_selected_node = false;
-  if (io.MouseDown[0] && !global_node_editor->drag_selection && !global_node_editor->selected_nodes.empty()) {       
+
+  // End drags
+  if (global_node_editor->mouse_state != NONE && !io.MouseDown[0]) {
+    global_node_editor->mouse_state = NONE;
+  }
+  
+  if (io.MouseDown[0] && global_node_editor->mouse_state == NONE && !global_node_editor->selected_nodes.empty()) {
     for (int node_id : global_node_editor->selected_nodes) {
       node *n = GetNode(node_id);
       if (n->mouse_in_node) {
-	mouse_in_any_selected_node = true;
+	global_node_editor->mouse_state = DRAGGING_NODES;
 	break;
       }
     }
   }
-  if (mouse_in_any_selected_node) {
-    ImVec2 drag_amount = io.MouseDelta / global_node_editor->zoom;
-    for (int node_id : global_node_editor->selected_nodes) {
-      node *n = GetNode(node_id);
-      n->pos += drag_amount;
+  if (global_node_editor->mouse_state == DRAGGING_NODES) {
+    if (io.MouseDown[0]) {
+      ImVec2 drag_amount = io.MouseDelta / global_node_editor->zoom;
+      for (int node_id : global_node_editor->selected_nodes) {
+	node *n = GetNode(node_id);
+	n->pos += drag_amount;
+      }
     }
   }
 
@@ -141,16 +154,17 @@ void EndNodeEditor() {
   
   // If mouse is down, and over a node, make the highest level node the selected node
 
-  // Add background to hovered nodes
+  // Add outline to hovered nodes
   ImDrawList* draw_list = ImGui::GetWindowDrawList();
   ImGuiIO& io = ImGui::GetIO();
   
   bool mouse_in_any_node = false;
   for (auto node : global_node_editor->node_pool) {
-    if(node.mouse_in_node && !global_node_editor->drag_selection) {
+    if(node.mouse_in_node && global_node_editor->mouse_state == NONE) {
       mouse_in_any_node = true;
       draw_list->AddRect(node.size.Min, node.size.Max, IM_COL32(0, 255, 0, 255));
       if (io.MouseDown[0] && !NodeSelected(node.id)) {
+	printf("here\n");
 	global_node_editor->selected_nodes.clear();
 	global_node_editor->selected_nodes.push_back(node.id);
       }
@@ -159,20 +173,24 @@ void EndNodeEditor() {
 
   // clicking canvas starts drag selection, clears selected_nodes
   if (global_node_editor->canvas_hovered && io.MouseDown[0]
-      && !mouse_in_any_node && !global_node_editor->drag_selection) {
-    global_node_editor->drag_selection = true;
+      && !mouse_in_any_node && global_node_editor->mouse_state == NONE) {
+    global_node_editor->mouse_state = DRAG_SELECTION;
     global_node_editor->drag_start = io.MousePos;
 
     global_node_editor->selected_nodes.clear();
   }
 
-  // end drag selection
-  if (!io.MouseDown[0] && global_node_editor->drag_selection) {
-    global_node_editor->drag_selection = false;
-  }
+
+  // if (global_node_editor->mouse_state == DRAG_SELECTION) {
+  //   // end drag selection
+  //   if (!io.MouseDown[0]) {
+  //     global_node_editor->mouse_state = NONE;
+  //   }    
+  // }
+  
   
   // draw drag selection @Cleanup
-  if (global_node_editor->drag_selection) {
+  if (global_node_editor->mouse_state == DRAG_SELECTION) {
     draw_list->AddRectFilled(global_node_editor->drag_start, io.MousePos, IM_COL32(0, 0, 255, 50));
     draw_list->AddRect(global_node_editor->drag_start, io.MousePos, IM_COL32(0, 0, 255, 255));
 
@@ -212,6 +230,7 @@ void EndNodeEditor() {
     draw_list->AddRect(n->size.Min, n->size.Max, IM_COL32(255, 0, 0, 255));
   }
 
+  draw_list->ChannelsMerge();
            
   // Transform canvas points to screen points
   ImVec2 origin = global_node_editor->origin;
@@ -276,6 +295,13 @@ void BeginNode(int node_id) {
   node *current_node = GetNode(node_id); //Todo implement
   global_node_editor->current_node = current_node;
 
+  ImDrawList* draw_list = ImGui::GetWindowDrawList();
+  //printf("current_node->layer %d\n", current_node->layer);
+  draw_list->ChannelsSetCurrent(current_node->layer * 2);
+  if (current_node->layer == 0) {
+    current_node->layer = global_node_editor->node_pool.size();
+  }
+  
   ImGui::SetCursorScreenPos(current_node->pos);
   ImGui::PushID(current_node->id);
   ImGui::BeginGroup();
@@ -291,6 +317,7 @@ void EndNode() {
   current_node->mouse_in_node = current_node->size.Contains(io.MousePos);
   
   // Add node background
+  draw_list->ChannelsSetCurrent((current_node->layer * 2) - 1);
   draw_list->AddRectFilled(current_node->size.Min, current_node->size.Max, IM_COL32(100, 0, 100, 150));
   
   global_node_editor->current_node = NULL;

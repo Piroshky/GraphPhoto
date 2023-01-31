@@ -265,12 +265,18 @@ int main(int, char**)
 
 	  ImDrawListSplitter& splitter = draw_list->_Splitter;
 
-	  splitter.Split(draw_list, 2);
+	  splitter.Split(draw_list, 3);
+
 	  // splitter.Split(draw_list, 3);
 	  // printf("splitter _Count: %d\n", splitter._Count);
 	  
 	  ImVec2 start_pos = node_pos;
 	  const int vtx_ix = draw_list->VtxBuffer.size();
+	  draw_list->ChannelsSetCurrent(2);
+	  draw_list->AddRectFilled({0,0}, {500,500}, IM_COL32(100, 0, 0, 255)); //red
+	  draw_list->ChannelsSetCurrent(1);
+	  draw_list->AddRectFilled({250,250}, {750,750}, IM_COL32(0, 0, 100, 255)); //blue
+	  draw_list->ChannelsMerge();
 
 	  // Start Node
 	  ImGui::SetCursorScreenPos(start_pos);
@@ -289,7 +295,7 @@ int main(int, char**)
 	  //printf("is focused? %s\n", ImGui::IsItemFocused() ? "yes" : "no");
 	  // End Node
           
-	  draw_list->AddRectFilled(node_size.Min, node_size.Max, IM_COL32(200, 50, 100, 100));
+	  draw_list->AddRectFilled(node_size.Min, node_size.Max, IM_COL32(200, 50, 100, 250));
 //	  ImGui::GetForegroundDrawList()->AddRectFilled(node_size.Min, node_size.Max, IM_COL32(00, 50, 200, 100));
 	  if(node_hovered) {
 	    draw_list->AddRect(node_size.Min, node_size.Max, IM_COL32(0, 255, 0, 255));
