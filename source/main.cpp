@@ -128,8 +128,6 @@ int main(int, char**)
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
-	ImGui::ShowStackToolWindow();
-	ImGui::ShowDemoWindow();
 	ImGui::Begin("GraphPhoto");
 	ImGui::Text("And this is my text");
 	
