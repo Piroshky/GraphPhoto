@@ -108,7 +108,6 @@ int main(int, char**)
     //IM_ASSERT(font != NULL);
 
     // Our state
-    bool show_demo_window = true;
     bool show_another_window = false;
     ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 
@@ -129,9 +128,11 @@ int main(int, char**)
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
-
-	ImGui::Begin("The Heart Break Photo Editor");
+	ImGui::ShowStackToolWindow();
+	ImGui::ShowDemoWindow();
+	ImGui::Begin("GraphPhoto");
 	ImGui::Text("And this is my text");
+	
 	if (ImGui::BeginTabBar("##TabBar"))
 	{
 	if (ImGui::BeginTabItem("Canvas"))
@@ -335,6 +336,10 @@ int main(int, char**)
 	if (ImGui::BeginTabItem("NodeEditor")) {
 	  ImGui::Checkbox("Enable grid", &GPNode::global_node_editor->grid_enabled);
 	  ImGui::Text("Zoom: %.1f", GPNode::global_node_editor->zoom);
+	  static char intext2[100];
+	  static float d = 1.0;
+	  ImGui::InputText("Text Input", intext2, IM_ARRAYSIZE(intext2));
+
 	  std::string selected_nodes = "";
 	  for (auto a : GPNode::global_node_editor->selected_nodes) {
 	    selected_nodes += std::to_string(a);
@@ -347,6 +352,9 @@ int main(int, char**)
 	  GPNode::BeginNode(1);
 	  ImGui::Text("This is my test text");
 	  ImGui::Text("some more text");
+	  ImGui::DragFloat("my float", &d, 0.01f);
+	  static char intext[100];
+	  ImGui::InputText("Text Input", intext, IM_ARRAYSIZE(intext));
 	  GPNode::EndNode();
 
 	  GPNode::BeginNode(2);

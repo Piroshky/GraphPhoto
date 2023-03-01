@@ -22,6 +22,7 @@ namespace GPNode {
 
   enum NodeEditorMouseState {
     NONE,
+    IMGUI_INTERACTION,
     DRAGGING_NODES,
     DRAG_SELECTION  
   };
@@ -31,7 +32,7 @@ namespace GPNode {
   
     node   *current_node;
     ImVec2  canvas_scrolling;
-    bool    canvas_hovered;
+    bool    mouse_in_canvas;
     ImVec2  origin;
     bool    grid_enabled;
     double  zoom;

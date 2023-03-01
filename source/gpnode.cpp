@@ -13,7 +13,7 @@ void InitializeNodeEditor() {
   global_node_editor->grid_enabled = true;
   global_node_editor->zoom = 1;
   //global_node_editor->drag_selection = false;
-  global_node_editor->canvas_hovered = false;
+  global_node_editor->mouse_in_canvas = false;
 }
 
 void BeginNodeEditor() {
@@ -22,6 +22,13 @@ void BeginNodeEditor() {
   ImGuiIO& io = ImGui::GetIO();
   
   //// Draw the canvas
+  ImGui::BeginChild("canvas_child_window",
+		    ImVec2(0.0f, 0.0f),
+		    true,
+		      ImGuiWindowFlags_NoMove |
+		      ImGuiWindowFlags_NoScrollbar |
+		      ImGuiWindowFlags_NoScrollWithMouse);
+  
   ImVec2 canvas_p0 = ImGui::GetCursorScreenPos();      // ImDrawList API uses screen coordinates!
   ImVec2 canvas_sz = ImGui::GetContentRegionAvail();   // Resize canvas to what's available
   if (canvas_sz.x < 50.0f) canvas_sz.x = 50.0f;
@@ -36,15 +43,12 @@ void BeginNodeEditor() {
   draw_list->AddRectFilled(canvas_p0, canvas_p1, IM_COL32(50, 50, 50, 255));
   draw_list->AddRect(canvas_p0, canvas_p1, IM_COL32(255, 255, 255, 255));
 
-  // This will catch our interactions
-  ImGui::InvisibleButton("canvas", canvas_sz, ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight);
-  global_node_editor->canvas_hovered = ImGui::IsItemHovered(); // Hovered
-  const bool is_active = ImGui::IsItemActive();   // Held
+  global_node_editor->mouse_in_canvas = ImGui::IsWindowHovered() || ImGui::IsWindowFocused(); // Hovered
 
   // Pan (we use a zero mouse threshold when there's no context menu)
   // You may decide to make that threshold dynamic based on whether the mouse is hovering something etc.
   const float mouse_threshold_for_pan = global_node_editor->grid_enabled ? 0.0f : 0.0f;
-  if (is_active && ImGui::IsMouseDragging(ImGuiMouseButton_Right, mouse_threshold_for_pan))
+  if (global_node_editor->mouse_in_canvas && ImGui::IsMouseDragging(ImGuiMouseButton_Right, mouse_threshold_for_pan))
   {
     global_node_editor->canvas_scrolling.x += io.MouseDelta.x;
     global_node_editor->canvas_scrolling.y += io.MouseDelta.y;
@@ -121,7 +125,7 @@ void BeginNodeEditor() {
   global_node_editor->vtx_ix = draw_list->VtxBuffer.size();
 
 
-  // End drags
+  // End drags, IMGUI_INTERACTION mouse state
   if (global_node_editor->mouse_state != NONE && !io.MouseDown[0]) {
     global_node_editor->mouse_state = NONE;
   }
@@ -136,7 +140,7 @@ void BeginNodeEditor() {
     }
   }
   if (global_node_editor->mouse_state == DRAGGING_NODES) {
-    if (io.MouseDown[0]) {
+    if (io.MouseDown[0] ) {
       ImVec2 drag_amount = io.MouseDelta / global_node_editor->zoom;
       for (int node_id : global_node_editor->selected_nodes) {
 	node *n = GetNode(node_id);
@@ -164,31 +168,28 @@ void EndNodeEditor() {
       mouse_in_any_node = true;
       draw_list->AddRect(node.size.Min, node.size.Max, IM_COL32(0, 255, 0, 255));
       if (io.MouseDown[0] && !NodeSelected(node.id)) {
-	printf("here\n");
 	global_node_editor->selected_nodes.clear();
 	global_node_editor->selected_nodes.push_back(node.id);
       }
     }
   }
 
-  // clicking canvas starts drag selection, clears selected_nodes
-  if (global_node_editor->canvas_hovered && io.MouseDown[0]
+  // This is how you tell if a DearImgui widget is active apparently.
+  // IsAnyItemActive doesn't do what you want, it returns true whenever the mouse is clicked,
+  // unless the mouse is over the true window's background.
+  if (ImGui::IsMouseClicked(0) && ImGui::IsAnyItemActive()) {
+    global_node_editor->mouse_state = IMGUI_INTERACTION;
+  }
+
+  // clicking canvas starts drag selection, clears selected_nodes  
+  if (global_node_editor->mouse_in_canvas && io.MouseDown[0]
       && !mouse_in_any_node && global_node_editor->mouse_state == NONE) {
     global_node_editor->mouse_state = DRAG_SELECTION;
     global_node_editor->drag_start = io.MousePos;
 
     global_node_editor->selected_nodes.clear();
   }
-
-
-  // if (global_node_editor->mouse_state == DRAG_SELECTION) {
-  //   // end drag selection
-  //   if (!io.MouseDown[0]) {
-  //     global_node_editor->mouse_state = NONE;
-  //   }    
-  // }
-  
-  
+    
   // draw drag selection @Cleanup
   if (global_node_editor->mouse_state == DRAG_SELECTION) {
     draw_list->AddRectFilled(global_node_editor->drag_start, io.MousePos, IM_COL32(0, 0, 255, 50));
@@ -264,6 +265,8 @@ void EndNodeEditor() {
   
   //// Restore mouse position
   io.MousePos = global_node_editor->screen_space_MousePos;
+
+  ImGui::EndChild();
 }
 
 node *CreateNode(int node_id) {
