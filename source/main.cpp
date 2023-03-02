@@ -339,6 +339,7 @@ int main(int, char**)
 	  ImGui::InputText("Text Input", intext2, IM_ARRAYSIZE(intext2));
 
 	  std::string selected_nodes = "";
+	  
 	  for (auto a : GPNode::global_node_editor->selected_nodes) {
 	    selected_nodes += std::to_string(a);
 	    selected_nodes += " ";

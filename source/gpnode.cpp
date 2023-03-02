@@ -14,6 +14,7 @@ void InitializeNodeEditor() {
   global_node_editor->zoom = 1;
   //global_node_editor->drag_selection = false;
   global_node_editor->mouse_in_canvas = false;
+  global_node_editor->num_nodes = 0;
 }
 
 void BeginNodeEditor() {
@@ -152,8 +153,7 @@ void BeginNodeEditor() {
 
 }
 
-void EndNodeEditor() {
-  
+void EndNodeEditor() {  
   // If mouse is NOT down, and over a node, highlight the highest level node
   
   // If mouse is down, and over a node, make the highest level node the selected node
@@ -163,13 +163,23 @@ void EndNodeEditor() {
   ImGuiIO& io = ImGui::GetIO();
   
   bool mouse_in_any_node = false;
-  for (auto node : global_node_editor->node_pool) {
+  for (auto& node : global_node_editor->node_pool) {
     if(node.mouse_in_node && global_node_editor->mouse_state == NONE) {
       mouse_in_any_node = true;
       draw_list->AddRect(node.size.Min, node.size.Max, IM_COL32(0, 255, 0, 255));
       if (io.MouseDown[0] && !NodeSelected(node.id)) {
 	global_node_editor->selected_nodes.clear();
 	global_node_editor->selected_nodes.push_back(node.id);
+
+	// set node to be top node
+	if (node.layer > 0 && node.layer != global_node_editor->num_nodes) {
+	  for (auto& n : global_node_editor->node_pool) {
+	    if (n.layer > node.layer) {
+	      n.layer -= 1;
+	    }
+	  }
+	  node.layer = global_node_editor->num_nodes;
+	}	
       }
     }
   }
@@ -192,6 +202,7 @@ void EndNodeEditor() {
     
   // draw drag selection @Cleanup
   if (global_node_editor->mouse_state == DRAG_SELECTION) {
+    draw_list->ChannelsSetCurrent((global_node_editor->num_nodes * 2)+1);
     draw_list->AddRectFilled(global_node_editor->drag_start, io.MousePos, IM_COL32(0, 0, 255, 50));
     draw_list->AddRect(global_node_editor->drag_start, io.MousePos, IM_COL32(0, 0, 255, 255));
 
@@ -272,6 +283,7 @@ void EndNodeEditor() {
 node *CreateNode(int node_id) {
   global_node_editor->node_pool.emplace_back(node_id);
   global_node_editor->node_pool.back().pos = ImGui::GetCursorPos();
+  global_node_editor->num_nodes += 1;
   return &global_node_editor->node_pool.back();
 }
 
@@ -300,10 +312,11 @@ void BeginNode(int node_id) {
 
   ImDrawList* draw_list = ImGui::GetWindowDrawList();
   //printf("current_node->layer %d\n", current_node->layer);
-  draw_list->ChannelsSetCurrent(current_node->layer * 2);
   if (current_node->layer == 0) {
     current_node->layer = global_node_editor->node_pool.size();
   }
+  draw_list->ChannelsSetCurrent(current_node->layer * 2);
+//  printf("setting node %d to layer %d\n", node_id, current_node->layer);
   
   ImGui::SetCursorScreenPos(current_node->pos);
   ImGui::PushID(current_node->id);
@@ -321,7 +334,7 @@ void EndNode() {
   
   // Add node background
   draw_list->ChannelsSetCurrent((current_node->layer * 2) - 1);
-  draw_list->AddRectFilled(current_node->size.Min, current_node->size.Max, IM_COL32(100, 0, 100, 150));
+  draw_list->AddRectFilled(current_node->size.Min, current_node->size.Max, IM_COL32(100, 0, 100, 255));
   
   global_node_editor->current_node = NULL;
   ImGui::PopID();

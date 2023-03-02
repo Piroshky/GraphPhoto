@@ -31,6 +31,7 @@ namespace GPNode {
     std::vector<node> node_pool;
   
     node   *current_node;
+    int     num_nodes;
     ImVec2  canvas_scrolling;
     bool    mouse_in_canvas;
     ImVec2  origin;
