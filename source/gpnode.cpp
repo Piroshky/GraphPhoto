@@ -2,6 +2,8 @@
 #include "imgui_internal.h"
 #include "gpnode.h"
 
+#define IMGUI_DEFINE_MATH_OPERATORS
+
 namespace GPNode {
 
 NodeEditor *global_node_editor = NULL;
@@ -42,7 +44,7 @@ void BeginNodeEditor() {
   // Draw border and background color
   ImDrawList* draw_list = ImGui::GetWindowDrawList();
   draw_list->AddRectFilled(canvas_p0, canvas_p1, IM_COL32(50, 50, 50, 255));
-  draw_list->AddRect(canvas_p0, canvas_p1, IM_COL32(255, 255, 255, 255));
+  // draw_list->AddRect(canvas_p0, canvas_p1, IM_COL32(255, 255, 255, 255));
 
   global_node_editor->mouse_in_canvas = ImGui::IsWindowHovered() || ImGui::IsWindowFocused(); // Hovered
 
@@ -64,6 +66,7 @@ void BeginNodeEditor() {
   mpic.x = mouse_pos_in_canvas.x;
 
   global_node_editor->screen_space_MousePos = io.MousePos;
+  global_node_editor->mouse_pos_in_canvas   = mpic;
   io.MousePos = mpic;
   io.MouseDrawCursor = true;
 
@@ -158,15 +161,16 @@ void EndNodeEditor() {
   
   // If mouse is down, and over a node, make the highest level node the selected node
 
-  // Add outline to hovered nodes
+
   ImDrawList* draw_list = ImGui::GetWindowDrawList();
   ImGuiIO& io = ImGui::GetIO();
-  
+
+  // Add outline to hovered nodes
   bool mouse_in_any_node = false;
   for (auto& node : global_node_editor->node_pool) {
     if(node.mouse_in_node && global_node_editor->mouse_state == NONE) {
       mouse_in_any_node = true;
-      draw_list->AddRect(node.size.Min, node.size.Max, IM_COL32(0, 255, 0, 255));
+      draw_list->AddRect(node.size.Min-2, node.size.Max+2, IM_COL32(0, 255, 0, 255));
       if (io.MouseDown[0] && !NodeSelected(node.id)) {
 	global_node_editor->selected_nodes.clear();
 	global_node_editor->selected_nodes.push_back(node.id);
@@ -251,7 +255,8 @@ void EndNodeEditor() {
 
   int vertices_count = draw_list->VtxBuffer.size() - global_node_editor->vtx_ix;
   
-  //printf("vertices_count %d\n", vertices_count);
+  // printf("vtx_ix %d\n", global_node_editor->vtx_ix);
+  // printf("vtx_size endeditor %d\n\n", draw_list->VtxBuffer.size());
   if (vertices_count > 0) {
     ImDrawVert *vert = &draw_list->VtxBuffer[draw_list->VtxBuffer.size() - (vertices_count)];
     for(int i = 0; i < vertices_count; ++i) {
@@ -282,7 +287,9 @@ void EndNodeEditor() {
 
 node *CreateNode(int node_id) {
   global_node_editor->node_pool.emplace_back(node_id);
-  global_node_editor->node_pool.back().pos = ImGui::GetCursorPos();
+  global_node_editor->node_pool.back().pos = ImGui::GetCursorScreenPos();
+  ImVec2 p = ImGui::GetCursorScreenPos();
+  printf("cursorPos: (%f, %f)\n", p.x, p.y);
   global_node_editor->num_nodes += 1;
   return &global_node_editor->node_pool.back();
 }
@@ -319,25 +326,47 @@ void BeginNode(int node_id) {
 //  printf("setting node %d to layer %d\n", node_id, current_node->layer);
   
   ImGui::SetCursorScreenPos(current_node->pos);
+  // printf("current_node pos: (%f, %f)\n", current_node->pos.x, current_node->pos.y);
+  // ImVec2 p = ImGui::GetCursorScreenPos();
+  // printf("cursorPos: (%f, %f)\n", p.x, p.y);
   ImGui::PushID(current_node->id);
+
+
+
   ImGui::BeginGroup();
+  ImGui::PushItemWidth(100);
 }
 
+#define NODE_MARGIN 5
+#define NODE_OUTLINE_WIDTH 2.0f
 void EndNode() {
   node *current_node = global_node_editor->current_node;
   ImGuiIO& io = ImGui::GetIO();
   ImDrawList* draw_list = ImGui::GetWindowDrawList();
-  
+
+  ImGui::PopItemWidth();
   ImGui::EndGroup();
-  current_node->size          = ImRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
+  current_node->size          = ImRect(ImGui::GetItemRectMin()-NODE_MARGIN, ImGui::GetItemRectMax()+NODE_MARGIN);
   current_node->mouse_in_node = current_node->size.Contains(io.MousePos);
   
   // Add node background
   draw_list->ChannelsSetCurrent((current_node->layer * 2) - 1);
   draw_list->AddRectFilled(current_node->size.Min, current_node->size.Max, IM_COL32(100, 0, 100, 255));
+
+  // C++ doesn't have named parameters in 2023 A.D. Good GOD what are you doing Stroustrup?
+  draw_list->AddRect(current_node->size.Min, current_node->size.Max, IM_COL32(200, 200, 200, 255), 0.0f, 0, NODE_OUTLINE_WIDTH);
   
   global_node_editor->current_node = NULL;
   ImGui::PopID();
+}
+
+void BeginNodeInput() {
+  ImDrawList* draw_list = ImGui::GetWindowDrawList();
+  ImGuiIO& io = ImGui::GetIO();
+  ImVec2 cursor_pos = ImGui::GetCursorScreenPos();
+  draw_list->AddCircleFilled(cursor_pos, 20,IM_COL32(255,0,0,255), 8);
+  // printf("vtx size %d\n",draw_list->VtxBuffer.size());
+  
 }
 
 void BeginNodeTitle() {

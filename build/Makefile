@@ -14,7 +14,7 @@
 #CXX = g++
 #CXX = clang++	
 
-EXE = example_glfw_opengl3
+EXE = graphphoto
 IMGUI_DIR = ../libs/imgui
 SOURCES = ../source/main.cpp ../source/gpnode.cpp
 SOURCES += $(IMGUI_DIR)/imgui.cpp $(IMGUI_DIR)/imgui_demo.cpp $(IMGUI_DIR)/imgui_draw.cpp $(IMGUI_DIR)/imgui_tables.cpp $(IMGUI_DIR)/imgui_widgets.cpp

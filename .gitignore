@@ -1,1 +1,3 @@
 /build/*.o
+/build/graphphoto
+/build/imgui.ini

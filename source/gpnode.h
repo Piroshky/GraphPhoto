@@ -45,6 +45,7 @@ namespace GPNode {
     ImVec2  drag_start;              //
     
     ImVec2 screen_space_MousePos;
+    ImVec2 mouse_pos_in_canvas;
 
     //ImDrawList* draw_list;
     int vtx_ix; //  = draw_list->VtxBuffer.size();
@@ -59,6 +60,7 @@ namespace GPNode {
 
   void BeginNode(int node_id);
   void EndNode();
+  void BeginNodeInput();
 
   node *GetNode(int node_id);
   bool NodeSelected(int node_id);
