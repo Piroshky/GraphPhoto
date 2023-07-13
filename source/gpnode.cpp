@@ -1,17 +1,27 @@
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include "imgui_internal.h"
 #include "gpnode.h"
+#include "gegl_helper.h"
 
 #define IMGUI_DEFINE_MATH_OPERATORS
 
 namespace GPNode {
 
+int CreateGeglNode(GeglOperationClass *klass);
+void DrawGeglNode(node &ui_node);
+  
 NodeEditor *global_node_editor = NULL;
 
 void InitializeNodeEditor() {
   IM_ASSERT(global_node_editor == NULL);
   global_node_editor = IM_NEW(NodeEditor)();
-
+  item_id_count = 4;  
+  
+  // Initialize GEGL duh
+  initialize_gegl();
+  
+  global_node_editor->graph = gegl_node_new();
+  
   global_node_editor->grid_enabled = true;
   global_node_editor->zoom = 1;
   //global_node_editor->drag_selection = false;
@@ -28,16 +38,36 @@ void BeginNodeEditor() {
   ImGui::BeginChild("canvas_child_window",
 		    ImVec2(0.0f, 0.0f),
 		    true,
-		      ImGuiWindowFlags_NoMove |
-		      ImGuiWindowFlags_NoScrollbar |
-		      ImGuiWindowFlags_NoScrollWithMouse);
+		    ImGuiWindowFlags_NoMove |
+		    ImGuiWindowFlags_NoScrollbar |
+		    ImGuiWindowFlags_NoScrollWithMouse);
   
   ImVec2 canvas_p0 = ImGui::GetCursorScreenPos();      // ImDrawList API uses screen coordinates!
   ImVec2 canvas_sz = ImGui::GetContentRegionAvail();   // Resize canvas to what's available
   if (canvas_sz.x < 50.0f) canvas_sz.x = 50.0f;
   if (canvas_sz.y < 50.0f) canvas_sz.y = 50.0f;
   ImVec2 canvas_p1 = ImVec2(canvas_p0.x + canvas_sz.x, canvas_p0.y + canvas_sz.y);
+  ImGui::InvisibleButton("canvas_inv_button", canvas_sz, ImGuiButtonFlags_MouseButtonRight);
+  ImGui::SetItemAllowOverlap();
+  ImGui::SetNextWindowSize({-1, 300}, NULL);
+  if(ImGui::BeginPopupContextItem("canvas_inv_button", ImGuiMouseButton_Right)) {
+    for (auto c : categories) {
+      if (ImGui::BeginMenu(c.first.c_str())) {
+	for (auto op : c.second.operations) {
+	  if (ImGui::MenuItem(op.klass->name, NULL, false, true)) {
+	    printf("context menu item pressed\n");
 
+	    CreateGeglNode(op.klass);
+	  }	  
+	}
+	ImGui::EndMenu();
+      }
+
+    }
+
+    ImGui::EndPopup();
+  }
+  
   global_node_editor->canvas_p0 = canvas_p0;
   global_node_editor->canvas_p1 = canvas_p1;
 
@@ -48,10 +78,24 @@ void BeginNodeEditor() {
 
   global_node_editor->mouse_in_canvas = ImGui::IsWindowHovered() || ImGui::IsWindowFocused(); // Hovered
 
+  // if (io.MouseDown[ImGuiMouseButton_Middle]) {
+  //   printf("middle (%f, %f)\n", io.MouseDelta.x, io.MouseDelta.y);
+  //   printf("mouse in canvas %s\n", global_node_editor->mouse_in_canvas ? "true" : "false");
+  //   printf("imgui call %s\n",
+  // 	   ImGui::IsMouseDragging(ImGuiMouseButton_Middle, 0.0f) ? "true" : "false");
+  // }
+  // if (io.MouseDown[ImGuiMouseButton_Right]) {
+  //   printf("right (%f, %f)\n", io.MouseDelta.x, io.MouseDelta.y);
+  //   printf("mouse in canvas %s\n", global_node_editor->mouse_in_canvas ? "true" : "false");
+  //   printf("imgui call %s\n",
+  // 	   ImGui::IsMouseDragging(ImGuiMouseButton_Right, 0.0f) ? "true" : "false");
+  // }
+
+  
   // Pan (we use a zero mouse threshold when there's no context menu)
   // You may decide to make that threshold dynamic based on whether the mouse is hovering something etc.
   const float mouse_threshold_for_pan = global_node_editor->grid_enabled ? 0.0f : 0.0f;
-  if (global_node_editor->mouse_in_canvas && ImGui::IsMouseDragging(ImGuiMouseButton_Right, mouse_threshold_for_pan))
+  if (global_node_editor->mouse_in_canvas && ImGui::IsMouseDragging(ImGuiMouseButton_Middle, mouse_threshold_for_pan))
   {
     global_node_editor->canvas_scrolling.x += io.MouseDelta.x;
     global_node_editor->canvas_scrolling.y += io.MouseDelta.y;
@@ -87,21 +131,13 @@ void BeginNodeEditor() {
   }
   global_node_editor->origin = origin;
 
-  // Context menu (under default mouse threshold)
-  ImVec2 drag_delta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Right);
-  if (drag_delta.x == 0.0f && drag_delta.y == 0.0f)
-    ImGui::OpenPopupOnItemClick("context", ImGuiPopupFlags_MouseButtonRight);
-  if (ImGui::BeginPopup("context"))
-  {
-    if (ImGui::MenuItem("context menu item", NULL, false, true)) { printf("context menu item pressed\n"); }
-    ImGui::EndPopup();
-  }
+
 
   // Create 2 channels per node, one for background, one for main content
   ImDrawListSplitter& splitter = draw_list->_Splitter;
   int num_channels = 2 * global_node_editor->node_pool.size();
   num_channels = (num_channels < 10) ? 10 : num_channels;
-  //printf("num_channels %d\n", num_channels);
+
   splitter.Split(draw_list, 1 + num_channels);
   
   // Draw grid            
@@ -119,11 +155,6 @@ void BeginNodeEditor() {
     for (float y = fmodf(global_node_editor->canvas_scrolling.y, GRID_STEP); y < canvas_sz.y; y += GRID_STEP)
       draw_list->AddLine(ImVec2(canvas_p0.x, canvas_p0.y + y), ImVec2(canvas_p1.x, canvas_p0.y + y), IM_COL32(200, 200, 200, 40));
   }
-
-  //// Demo line drawing, keeping for now as reference
-  // for (int n = 0; n < points.Size; n += 2)
-  //   draw_list->AddLine(ImVec2(origin.x + points[n].x * global_node_editor->zoom , origin.y + points[n].y * global_node_editor->zoom), ImVec2(origin.x + points[n + 1].x * global_node_editor->zoom, origin.y + points[n + 1].y * global_node_editor->zoom), IM_COL32(255, 255, 0, 255), 2.0f);
-
 
   ImGui::SetCursorScreenPos({0,0});
   global_node_editor->vtx_ix = draw_list->VtxBuffer.size();
@@ -154,6 +185,8 @@ void BeginNodeEditor() {
   }
 
 
+  
+
 }
 
 void EndNodeEditor() {  
@@ -165,12 +198,22 @@ void EndNodeEditor() {
   ImDrawList* draw_list = ImGui::GetWindowDrawList();
   ImGuiIO& io = ImGui::GetIO();
 
+  // draw Gegl nodes
+  for (auto& node : global_node_editor->node_pool) {
+    if (node.draw_type != GEGL) {
+      continue;
+    }
+    // Draw
+    DrawGeglNode(node);
+  } 
+  
+
   // Add outline to hovered nodes
   bool mouse_in_any_node = false;
   for (auto& node : global_node_editor->node_pool) {
     if(node.mouse_in_node && global_node_editor->mouse_state == NONE) {
       mouse_in_any_node = true;
-      draw_list->AddRect(node.size.Min-2, node.size.Max+2, IM_COL32(0, 255, 0, 255));
+      draw_list->AddRect(node.size.Min - global_node_editor->Style_NodeMargin, node.size.Max + global_node_editor->Style_NodeMargin, IM_COL32(0, 255, 0, 255));
       if (io.MouseDown[0] && !NodeSelected(node.id)) {
 	global_node_editor->selected_nodes.clear();
 	global_node_editor->selected_nodes.push_back(node.id);
@@ -206,7 +249,7 @@ void EndNodeEditor() {
     
   // draw drag selection @Cleanup
   if (global_node_editor->mouse_state == DRAG_SELECTION) {
-    draw_list->ChannelsSetCurrent((global_node_editor->num_nodes * 2)+1);
+    draw_list->ChannelsSetCurrent(global_node_editor->num_nodes * 2);
     draw_list->AddRectFilled(global_node_editor->drag_start, io.MousePos, IM_COL32(0, 0, 255, 50));
     draw_list->AddRect(global_node_editor->drag_start, io.MousePos, IM_COL32(0, 0, 255, 255));
 
@@ -279,18 +322,23 @@ void EndNodeEditor() {
 	    
   ImGui::PopClipRect();
   
+ 
+  // Context menu (under default mouse threshold)
+  ImVec2 drag_delta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Right);
+
   //// Restore mouse position
   io.MousePos = global_node_editor->screen_space_MousePos;
-
+  
   ImGui::EndChild();
+  
 }
 
 node *CreateNode(int node_id) {
   global_node_editor->node_pool.emplace_back(node_id);
   global_node_editor->node_pool.back().pos = ImGui::GetCursorScreenPos();
-  ImVec2 p = ImGui::GetCursorScreenPos();
-  printf("cursorPos: (%f, %f)\n", p.x, p.y);
+
   global_node_editor->num_nodes += 1;
+  
   return &global_node_editor->node_pool.back();
 }
 
@@ -331,8 +379,6 @@ void BeginNode(int node_id) {
   // printf("cursorPos: (%f, %f)\n", p.x, p.y);
   ImGui::PushID(current_node->id);
 
-
-
   ImGui::BeginGroup();
   ImGui::PushItemWidth(100);
 }
@@ -360,16 +406,145 @@ void EndNode() {
   ImGui::PopID();
 }
 
-void BeginNodeInput() {
-  ImDrawList* draw_list = ImGui::GetWindowDrawList();
+void BeginNodeProperty(node_property *property) {
+
   ImGuiIO& io = ImGui::GetIO();
-  ImVec2 cursor_pos = ImGui::GetCursorScreenPos();
-  draw_list->AddCircleFilled(cursor_pos, 20,IM_COL32(255,0,0,255), 8);
+//  ImVec2 cursor_pos = ImGui::GetCursorScreenPos();
+
+  ImGui::BeginGroup();
+  ImGui::PushID(property->id);
+  
   // printf("vtx size %d\n",draw_list->VtxBuffer.size());
   
+}
+
+void EndNodeProperty(node_property *property) {
+  ImGui::PopID();
+  ImGui::EndGroup();
+
+  property->rect = ImRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
+
+  ImDrawList* draw_list = ImGui::GetWindowDrawList();
+
+  printf("\min.y %f, max.y %f, min-max %f \n", property->rect.Min.y, property->rect.Max.y, property->rect.Min.y + (property->rect.Max.y - property->rect.Min.y) / 2);
+  
+  ImVec2 pos = {property->rect.Min.x-5,
+		property->rect.Min.y + ((property->rect.Max.y - property->rect.Min.y) / 2)};
+  
+  draw_list->AddCircleFilled(pos, 5 ,IM_COL32(255,0,0,255), 8);
 }
 
 void BeginNodeTitle() {
 
 }
+
+void DrawGeglNode(node &ui_node) {
+  GPNode::BeginNode(ui_node.id);
+  ImGui::Text(ui_node.gegl_operation_klass->name);
+  ImGui::Separator();
+  
+  ImGui::Text("Input Pads");
+  for (auto p : ui_node.gegl_input_pads) {
+    ImGui::Text(p);
+  }
+  
+  ImGui::Text("Input Properties");
+  for (auto& p : ui_node.input_properties) {
+
+    printf("(%f, %f)\n", p.rect.Min.x, p.rect.Min.y);
+    BeginNodeProperty(&p);
+    
+    if      (g_type_is_a(p.gtype, GEGL_TYPE_PARAM_INT)) {
+      ImGui::Text("(INT)  -  %s", p.label);
+    }
+    else if (g_type_is_a(p.gtype, G_TYPE_DOUBLE)) {
+      ImGui::Text("(DOUBLE)  -  %s %s", g_type_name(p.gtype), p.label);
+    }
+    else if (g_type_is_a(p.gtype, G_TYPE_PARAM_ENUM)) {
+      ImGui::Text("(ENUM)  -  %s %s", g_type_name(p.gtype), p.label);
+    }
+    else {
+      ImGui::Text("%s -- %s", g_type_name(p.gtype), p.label);      
+    }
+
+    EndNodeProperty(&p);
+    printf("(%f, %f)\n\n", p.rect.Min.x, p.rect.Min.y);
+  }
+
+  ImGui::Text("Output Pads");
+  for (auto p : ui_node.gegl_output_pads) {
+    ImGui::Text(p);
+  }
+  
+  GPNode::EndNode();
+}
+
+int CreateGeglNode(GeglOperationClass *klass) {
+  GeglNode *gegl_node = gegl_node_new_child(global_node_editor->graph, "operation", klass->name, NULL);
+  item_id_count += 1;
+  int node_id = item_id_count;
+  node *ui_node = CreateNode(node_id);
+  ui_node->draw_type = GEGL;
+  ui_node->gegl_operation_klass = klass;
+  
+  // ImVec2 p = ImGui::GetCursorScreenPos();
+  printf("Operation name: %s\n", klass->name);
+  // printf("\tnode/cursor pos: (%f, %f)\n", p.x, p.y);
+  
+  ui_node->pos = global_node_editor->mouse_pos_in_canvas;
+      
+  // Add input pads
+  printf("Input Pads:\n");
+  gchar ** input_pads = gegl_node_list_input_pads(gegl_node);
+  for (char **c = input_pads; c != NULL && *c != 0; ++c) {
+    g_print("\t\t%s\n", *c);
+    ui_node->gegl_input_pads.emplace_back(strdup(*c));
+  }
+  g_strfreev(input_pads);
+
+  // Add output pads
+  printf("Output Pads:\n");
+  gchar ** output_pads = gegl_node_list_output_pads(gegl_node);
+  for (char **c = output_pads; c != NULL && *c != 0; ++c) {
+    g_print("\t\t%s\n", *c);
+    ui_node->gegl_output_pads.emplace_back(strdup(*c));
+  }
+  g_strfreev(output_pads);
+  
+  // Add input properties
+  printf("Properties:\n");
+  unsigned int n_properties;
+  GParamSpec **properties = g_object_class_list_properties((GObjectClass*) klass, &n_properties);
+  for (unsigned int j = 0; j < n_properties; ++j) {
+    node_property property;
+    property.label = strdup(g_param_spec_get_nick(properties[j]));
+    property.gtype = G_PARAM_SPEC_TYPE(properties[j]);
+    item_id_count += 1;
+    property.id = item_id_count;
+
+    g_print("\t\t %d  %s\n",property.id, g_param_spec_get_name(properties[j]));
+
+    GType parameter_type G_PARAM_SPEC_TYPE(properties[j]);
+    if (g_type_is_a(parameter_type, G_TYPE_PARAM_ENUM)) {
+      GParamSpecEnum *pspec = G_PARAM_SPEC_ENUM(properties[j]);
+      GEnumClass *eclass = pspec->enum_class;
+
+      GEnumValue *value = eclass->values;
+      for (int i = 0; i < eclass->n_values; ++i) {
+	printf("\t\t (%d) %s %s\n", value->value, value->value_name, value->value_nick);
+	++value;
+      }
+    }
+    
+    ui_node->input_properties.emplace_back(property);
+  }
+  g_free(properties); // todo is this right?
+  
+  // Add output pads (? not sure if they exist)
+
+  // add output properties (? not sure if they exist)
+
+  return 0;
+}
+
 }

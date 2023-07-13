@@ -16,7 +16,7 @@
 
 EXE = graphphoto
 IMGUI_DIR = ../libs/imgui
-SOURCES = ../source/main.cpp ../source/gpnode.cpp
+SOURCES = ../source/main.cpp ../source/gpnode.cpp ../source/gegl_helper.cpp
 SOURCES += $(IMGUI_DIR)/imgui.cpp $(IMGUI_DIR)/imgui_demo.cpp $(IMGUI_DIR)/imgui_draw.cpp $(IMGUI_DIR)/imgui_tables.cpp $(IMGUI_DIR)/imgui_widgets.cpp
 SOURCES += $(IMGUI_DIR)/backends/imgui_impl_glfw.cpp $(IMGUI_DIR)/backends/imgui_impl_opengl3.cpp
 OBJS = $(addsuffix .o, $(basename $(notdir $(SOURCES))))
@@ -41,9 +41,9 @@ LIBS =
 
 ifeq ($(UNAME_S), Linux) #LINUX
 	ECHO_MESSAGE = "Linux"
-	LIBS += $(LINUX_GL_LIBS) `pkg-config --static --libs glfw3`
+	LIBS += $(LINUX_GL_LIBS) `pkg-config --static --libs glfw3 gegl-0.4`
 
-	CXXFLAGS += `pkg-config --cflags glfw3`
+	CXXFLAGS += `pkg-config --cflags glfw3 gegl-0.4`
 	CFLAGS = $(CXXFLAGS)
 endif
 

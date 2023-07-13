@@ -1,8 +1,21 @@
 #pragma once
 #include <imgui.h>
+#include <gegl.h>
+#include <gegl-plugin.h>
 #include <vector>
 
 namespace GPNode {
+
+  extern int item_id_count;
+
+  enum NODE_DRAW_TYPE {CUSTOM, GEGL};
+
+  struct node_property {
+    int     id;
+    char   *label;
+    GType   gtype;
+    ImRect  rect;
+  };
 
   struct node {
     int     id;
@@ -11,12 +24,20 @@ namespace GPNode {
     int     layer;
     bool    mouse_in_node;
 
+    NODE_DRAW_TYPE draw_type;
+    GeglOperationClass *gegl_operation_klass;
+    
+    std::vector<char*> gegl_input_pads;
+    std::vector<char*> gegl_output_pads;
+    std::vector<node_property> input_properties;    
+    
   node(int id)
     : id(id),
       pos({0,0}),
       size(0,0,0,0),
       layer(0),
-      mouse_in_node(false)
+      mouse_in_node(false),
+      draw_type(CUSTOM)
     {}
   };
 
@@ -29,6 +50,7 @@ namespace GPNode {
 
   struct NodeEditor {
     std::vector<node> node_pool;
+    std::vector<node> pin_pool;
   
     node   *current_node;
     int     num_nodes;
@@ -36,7 +58,7 @@ namespace GPNode {
     bool    mouse_in_canvas;
     ImVec2  origin;
     bool    grid_enabled;
-    double  zoom;
+    double  zoom;    
 
     NodeEditorMouseState mouse_state;
     std::vector<int> selected_nodes;
@@ -52,6 +74,11 @@ namespace GPNode {
     int canvas_clip_rect_ix;
     ImVec2  canvas_p0;
     ImVec2  canvas_p1;
+
+    int Style_NodeMargin = 2;
+
+    GeglNode *graph;
+    
   };
   
   void InitializeNodeEditor();
@@ -60,7 +87,8 @@ namespace GPNode {
 
   void BeginNode(int node_id);
   void EndNode();
-  void BeginNodeInput();
+  void BeginNodeInput(int id);
+  void EndNodeInput();
 
   node *GetNode(int node_id);
   bool NodeSelected(int node_id);
