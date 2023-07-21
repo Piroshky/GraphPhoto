@@ -15,6 +15,8 @@ namespace GPNode {
     char   *label;
     GType   gtype;
     ImRect  rect;
+    ImVec2  pin_pos;
+    bool    hovered;
   };
 
   struct node {
@@ -23,6 +25,7 @@ namespace GPNode {
     ImRect  size;
     int     layer;
     bool    mouse_in_node;
+    bool    hovered;
 
     NODE_DRAW_TYPE draw_type;
     GeglOperationClass *gegl_operation_klass;
@@ -37,7 +40,8 @@ namespace GPNode {
       size(0,0,0,0),
       layer(0),
       mouse_in_node(false),
-      draw_type(CUSTOM)
+      draw_type(CUSTOM),
+      hovered(false)
     {}
   };
 
@@ -75,8 +79,10 @@ namespace GPNode {
     ImVec2  canvas_p0;
     ImVec2  canvas_p1;
 
-    int Style_NodeMargin = 2;
-
+    int Style_NodeMargin = 10;
+    int Style_NodeOutlineWidth = 2;
+    int Style_PinRadius = 5;
+    
     GeglNode *graph;
     
   };

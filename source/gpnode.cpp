@@ -1,4 +1,8 @@
 #define IMGUI_DEFINE_MATH_OPERATORS
+
+#include <limits>
+#include <math.h>
+
 #include "imgui_internal.h"
 #include "gpnode.h"
 #include "gegl_helper.h"
@@ -71,7 +75,7 @@ void BeginNodeEditor() {
   global_node_editor->canvas_p0 = canvas_p0;
   global_node_editor->canvas_p1 = canvas_p1;
 
-  // Draw border and background color
+  // Draw canvas border and background color
   ImDrawList* draw_list = ImGui::GetWindowDrawList();
   draw_list->AddRectFilled(canvas_p0, canvas_p1, IM_COL32(50, 50, 50, 255));
   // draw_list->AddRect(canvas_p0, canvas_p1, IM_COL32(255, 255, 255, 255));
@@ -194,26 +198,96 @@ void EndNodeEditor() {
   
   // If mouse is down, and over a node, make the highest level node the selected node
 
-
   ImDrawList* draw_list = ImGui::GetWindowDrawList();
   ImGuiIO& io = ImGui::GetIO();
 
-  // draw Gegl nodes
+  // Determine what is being hovered
+  int highest_layer = -1;
+  int hovered_node_id = -1;
+  int hovered_pin_id  = -1;
+  float req_dist = pow(global_node_editor->Style_PinRadius * 1.5, 2.0);
   for (auto& node : global_node_editor->node_pool) {
-    if (node.draw_type != GEGL) {
+    node.hovered = false;
+    
+    if (node.layer < highest_layer) {
       continue;
     }
-    // Draw
-    DrawGeglNode(node);
-  } 
+    
+    if (node.mouse_in_node) {
+      printf("node %d hovered\n", node.id);
+      hovered_node_id = node.id;
+      highest_layer   = node.layer;
+      hovered_pin_id  = -1;
+    }
+    
+    float max_dist = std::numeric_limits<float>::infinity();    
+    for (auto& property : node.input_properties) {
+      property.hovered = false;
+      float dist = pow(property.pin_pos.x - io.MousePos.x , 2.0) +
+                   pow(property.pin_pos.y - io.MousePos.y , 2.0);
+      if ((dist <= req_dist) && (dist < max_dist)) {
+	hovered_node_id = node.id;
+	highest_layer   = node.layer;
+	hovered_pin_id  = property.id;
+      }
+    }
+  }
   
+  // set node/pin to be hovered
+  for (auto& node : global_node_editor->node_pool) {
+    if (hovered_node_id == node.id) {
+      if (hovered_pin_id == -1) {
+	node.hovered = true;
+	printf("node %d hovered %s\n\n", node.id, (node.hovered) ? "true" : "false");
+      } else {
+	for (auto& property : node.input_properties) {
+	  if (hovered_pin_id == property.id) {
+	    property.hovered = true;
+	    break;
+	  }
+	}
+      }
+    }
+  }
+  
+  // Draw outlines, draw Gegl nodes
+  for (auto& node : global_node_editor->node_pool) {
+    if (node.draw_type == GEGL) {
+      DrawGeglNode(node);
+    }
+
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+    draw_list->ChannelsSetCurrent((node.layer * 2) - 1);
+
+    // Add node background
+    draw_list->ChannelsSetCurrent((node.layer * 2) - 1);
+    draw_list->AddRectFilled(node.size.Min,
+			     node.size.Max,
+			     IM_COL32(100, 0, 100, 255));
+
+    // Add node outline
+    // C++ doesn't have named parameters in 2023 A.D. Good GOD what are you doing Stroustrup?
+    ImU32 outline_color;
+    if (node.hovered) {
+      outline_color = IM_COL32(0, 255, 0, 255);
+    } else {
+      outline_color = IM_COL32(200, 200, 200, 255);      
+    }
+    draw_list->AddRect(node.size.Min,
+		       node.size.Max,
+		       outline_color,
+		       0.0f, 0, global_node_editor->Style_NodeOutlineWidth);
+  }
 
   // Add outline to hovered nodes
-  bool mouse_in_any_node = false;
   for (auto& node : global_node_editor->node_pool) {
     if(node.mouse_in_node && global_node_editor->mouse_state == NONE) {
-      mouse_in_any_node = true;
-      draw_list->AddRect(node.size.Min - global_node_editor->Style_NodeMargin, node.size.Max + global_node_editor->Style_NodeMargin, IM_COL32(0, 255, 0, 255));
+
+      if (!node.hovered) {
+	continue;
+      }
+
+
       if (io.MouseDown[0] && !NodeSelected(node.id)) {
 	global_node_editor->selected_nodes.clear();
 	global_node_editor->selected_nodes.push_back(node.id);
@@ -238,7 +312,8 @@ void EndNodeEditor() {
     global_node_editor->mouse_state = IMGUI_INTERACTION;
   }
 
-  // clicking canvas starts drag selection, clears selected_nodes  
+  // clicking canvas starts drag selection, clears selected_nodes
+  bool mouse_in_any_node = (hovered_node_id != -1);
   if (global_node_editor->mouse_in_canvas && io.MouseDown[0]
       && !mouse_in_any_node && global_node_editor->mouse_state == NONE) {
     global_node_editor->mouse_state = DRAG_SELECTION;
@@ -286,7 +361,9 @@ void EndNodeEditor() {
   // draw highlight on selected nodes
   for (int id : global_node_editor->selected_nodes) {
     node *n = GetNode(id); // @Cleanup very stupid n^2 stuff here, just temporary for now
-    draw_list->AddRect(n->size.Min, n->size.Max, IM_COL32(255, 0, 0, 255));
+    draw_list->AddRect(n->size.Min,
+		       n->size.Max,
+		       IM_COL32(255, 0, 0, 255));
   }
 
   draw_list->ChannelsMerge();
@@ -383,8 +460,6 @@ void BeginNode(int node_id) {
   ImGui::PushItemWidth(100);
 }
 
-#define NODE_MARGIN 5
-#define NODE_OUTLINE_WIDTH 2.0f
 void EndNode() {
   node *current_node = global_node_editor->current_node;
   ImGuiIO& io = ImGui::GetIO();
@@ -392,15 +467,22 @@ void EndNode() {
 
   ImGui::PopItemWidth();
   ImGui::EndGroup();
-  current_node->size          = ImRect(ImGui::GetItemRectMin()-NODE_MARGIN, ImGui::GetItemRectMax()+NODE_MARGIN);
+  current_node->size          = ImRect(ImGui::GetItemRectMin()- global_node_editor->Style_NodeMargin,
+				       ImGui::GetItemRectMax()+ global_node_editor->Style_NodeMargin);
   current_node->mouse_in_node = current_node->size.Contains(io.MousePos);
   
-  // Add node background
-  draw_list->ChannelsSetCurrent((current_node->layer * 2) - 1);
-  draw_list->AddRectFilled(current_node->size.Min, current_node->size.Max, IM_COL32(100, 0, 100, 255));
+  // // Add node background
+  // draw_list->ChannelsSetCurrent((current_node->layer * 2) - 1);
+  // draw_list->AddRectFilled(current_node->size.Min,
+  // 			   current_node->size.Max,
+  // 			   IM_COL32(100, 0, 100, 255));
 
-  // C++ doesn't have named parameters in 2023 A.D. Good GOD what are you doing Stroustrup?
-  draw_list->AddRect(current_node->size.Min, current_node->size.Max, IM_COL32(200, 200, 200, 255), 0.0f, 0, NODE_OUTLINE_WIDTH);
+  // // Add node outline
+  // // C++ doesn't have named parameters in 2023 A.D. Good GOD what are you doing Stroustrup?
+  // draw_list->AddRect(current_node->size.Min,
+  // 		     current_node->size.Max,
+  // 		     IM_COL32(200, 200, 200, 255),
+  // 		     0.0f, 0, global_node_editor->Style_NodeOutlineWidth);
   
   global_node_editor->current_node = NULL;
   ImGui::PopID();
@@ -422,16 +504,26 @@ void EndNodeProperty(node_property *property) {
   ImGui::PopID();
   ImGui::EndGroup();
 
+  ImVec2 min = ImGui::GetItemRectMin();
+  ImVec2 max = ImGui::GetItemRectMax();
+  
   property->rect = ImRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
 
   ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
-  printf("\min.y %f, max.y %f, min-max %f \n", property->rect.Min.y, property->rect.Max.y, property->rect.Min.y + (property->rect.Max.y - property->rect.Min.y) / 2);
+  // printf("\min.y %f, max.y %f, min-max %f \n", property->rect.Min.y, property->rect.Max.y, property->rect.Min.y + (property->rect.Max.y - property->rect.Min.y) / 2);
+
+  int pin_radius = global_node_editor->Style_PinRadius;
   
-  ImVec2 pos = {property->rect.Min.x-5,
-		property->rect.Min.y + ((property->rect.Max.y - property->rect.Min.y) / 2)};
-  
-  draw_list->AddCircleFilled(pos, 5 ,IM_COL32(255,0,0,255), 8);
+  ImVec2 pin_pos = {min.x - (global_node_editor->Style_NodeMargin) + (global_node_editor->Style_NodeOutlineWidth) / 2.0f,
+		    min.y + ((max.y - min.y) / 2)};
+
+  property->pin_pos = pin_pos;
+
+  draw_list->AddCircleFilled(pin_pos, pin_radius ,IM_COL32(50, 50, 50, 255), 16);
+  draw_list->AddCircle(pin_pos, pin_radius,
+		       IM_COL32(200, 200, 200, 255),
+		       16, global_node_editor->Style_NodeOutlineWidth);
 }
 
 void BeginNodeTitle() {
@@ -451,7 +543,7 @@ void DrawGeglNode(node &ui_node) {
   ImGui::Text("Input Properties");
   for (auto& p : ui_node.input_properties) {
 
-    printf("(%f, %f)\n", p.rect.Min.x, p.rect.Min.y);
+    // printf("(%f, %f)\n", p.rect.Min.x, p.rect.Min.y);
     BeginNodeProperty(&p);
     
     if      (g_type_is_a(p.gtype, GEGL_TYPE_PARAM_INT)) {
@@ -468,7 +560,7 @@ void DrawGeglNode(node &ui_node) {
     }
 
     EndNodeProperty(&p);
-    printf("(%f, %f)\n\n", p.rect.Min.x, p.rect.Min.y);
+    // printf("(%f, %f)\n\n", p.rect.Min.x, p.rect.Min.y);
   }
 
   ImGui::Text("Output Pads");
@@ -521,6 +613,7 @@ int CreateGeglNode(GeglOperationClass *klass) {
     property.gtype = G_PARAM_SPEC_TYPE(properties[j]);
     item_id_count += 1;
     property.id = item_id_count;
+    property.hovered = false;
 
     g_print("\t\t %d  %s\n",property.id, g_param_spec_get_name(properties[j]));
 
