@@ -23,7 +23,7 @@ struct node_category {
 };
 
 int initialize_gegl();
-
+void test_operation(const char *operation);
 
 extern std::vector<node_io> node_info;
 extern std::map<std::string, node_category> categories;

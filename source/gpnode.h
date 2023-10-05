@@ -6,8 +6,6 @@
 
 namespace GPNode {
 
-  extern int item_id_count;
-
   enum NODE_DRAW_TYPE {CUSTOM, GEGL};
 
   struct node_property {
@@ -40,8 +38,8 @@ namespace GPNode {
       size(0,0,0,0),
       layer(0),
       mouse_in_node(false),
-      draw_type(CUSTOM),
-      hovered(false)
+      hovered(false),
+      draw_type(CUSTOM)
     {}
   };
 
