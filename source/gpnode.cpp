@@ -11,6 +11,19 @@
 
 namespace GPNode {
 
+#define ENUM_CASE(x) case x: return #x; break;
+
+const char *mouse_state_string(NodeEditorMouseState s) {
+  switch(s) {
+    ENUM_CASE(NONE);
+    ENUM_CASE(IMGUI_INTERACTION);
+    ENUM_CASE(DRAGGING_NODES);
+    ENUM_CASE(DRAG_SELECTION);
+  default:
+    return "cpp is bad and you forgot to update the enum stringifizer";
+  }
+}
+
 #define TOP_CHANNEL (global_node_editor->num_nodes * 2)
 
 inline int node_foreground(node n) {
@@ -198,10 +211,6 @@ void BeginNodeEditor() {
       }
     }
   }
-
-
-  
-
 }
 
 void EndNodeEditor() {  
@@ -231,7 +240,7 @@ void EndNodeEditor() {
       hovered_pin_id  = -1;
     }
     
-    float max_dist = std::numeric_limits<float>::infinity();    
+    float max_dist = std::numeric_limits<float>::infinity();
     for (auto& property : node.input_properties) {
       property.hovered = false;
       float dist = pow(property.pin_pos.x - io.MousePos.x , 2.0) +

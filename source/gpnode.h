@@ -50,6 +50,8 @@ namespace GPNode {
     DRAG_SELECTION  
   };
 
+const char *mouse_state_string(NodeEditorMouseState s);
+
   struct NodeEditor {
     std::vector<node> node_pool;
     std::vector<node> pin_pool;

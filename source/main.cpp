@@ -3,11 +3,11 @@
 // If you are new to Dear ImGui, read documentation from the docs/ folder + read the top of imgui.cpp.
 // Read online: https://github.com/ocornut/imgui/tree/master/docs
 #define IMGUI_DEFINE_MATH_OPERATORS
-#include "imgui.h"
-#include "imgui_internal.h"
-#include "imgui_impl_glfw.h"
-#include "imgui_impl_opengl3.h"
-#include "imgui_internal.h"
+#include <imgui.h>
+#include <imgui_internal.h>
+#include <imgui_impl_glfw.h>
+#include <imgui_impl_opengl3.h>
+#include <imgui_internal.h>
 
 #include <stdio.h>
 #if defined(IMGUI_IMPL_OPENGL_ES2)
@@ -141,6 +141,7 @@ int main(int, char**)
 	    ImGui::Checkbox("Enable grid", &GPNode::global_node_editor->grid_enabled);
 	    ImGui::Text("Zoom: %.1f", GPNode::global_node_editor->zoom);
 	    ImGui::Text("Mouse Position in canvas: (%f, %f)", GPNode::global_node_editor->mouse_pos_in_canvas.x, GPNode::global_node_editor->mouse_pos_in_canvas.y);
+	    ImGui::Text("mouse_state: %s", GPNode::mouse_state_string(GPNode::global_node_editor->mouse_state));
 	    static char intext2[100];
 	    static float d = 1.0;
 	    ImGui::InputText("Text Input", intext2, IM_ARRAYSIZE(intext2));
