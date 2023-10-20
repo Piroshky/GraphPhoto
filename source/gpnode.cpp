@@ -19,6 +19,7 @@ const char *mouse_state_string(NodeEditorMouseState s) {
     ENUM_CASE(IMGUI_INTERACTION);
     ENUM_CASE(DRAGGING_NODES);
     ENUM_CASE(DRAG_SELECTION);
+    ENUM_CASE(CREATE_LINK);
   default:
     return "cpp is bad and you forgot to update the enum stringifizer";
   }
@@ -187,9 +188,9 @@ void BeginNodeEditor() {
   ImGui::SetCursorScreenPos({0,0});
   global_node_editor->vtx_ix = draw_list->VtxBuffer.size();
 
-
   // End drags, IMGUI_INTERACTION mouse state
-  if (global_node_editor->mouse_state != NONE && !io.MouseDown[0]) {
+  if (!io.MouseDown[0] && global_node_editor->mouse_state != NONE
+      && global_node_editor->mouse_state != CREATE_LINK) {
     global_node_editor->mouse_state = NONE;
   }
   
@@ -213,13 +214,16 @@ void BeginNodeEditor() {
   }
 }
 
-void EndNodeEditor() {  
+void EndNodeEditor() {
+  ImGuiIO& io = ImGui::GetIO();
+
+  
   // If mouse is NOT down, and over a node, highlight the highest level node
   
   // If mouse is down, and over a node, make the highest level node the selected node
 
   ImDrawList* draw_list = ImGui::GetWindowDrawList();
-  ImGuiIO& io = ImGui::GetIO();
+  // ImGuiIO& io = ImGui::GetIO();
 
   // Determine what is being hovered
   int highest_layer = -1;
@@ -234,21 +238,21 @@ void EndNodeEditor() {
     }
     
     if (node.mouse_in_node) {
-      // printf("node %d hovered\n", node.id);
       hovered_node_id = node.id;
       highest_layer   = node.layer;
       hovered_pin_id  = -1;
     }
     
     float max_dist = std::numeric_limits<float>::infinity();
-    for (auto& property : node.input_properties) {
-      property.hovered = false;
-      float dist = pow(property.pin_pos.x - io.MousePos.x , 2.0) +
-                   pow(property.pin_pos.y - io.MousePos.y , 2.0);
+    for (int p : node.input_properties) {
+      node_property *property = FindProperty(p);
+      property->hovered = false;
+      float dist = pow(property->pin_pos.x - io.MousePos.x , 2.0) +
+                   pow(property->pin_pos.y - io.MousePos.y , 2.0);
       if ((dist <= req_dist) && (dist < max_dist)) {
 	hovered_node_id = node.id;
 	highest_layer   = node.layer;
-	hovered_pin_id  = property.id;
+	hovered_pin_id  = property->id;
       }
     }
   }
@@ -256,17 +260,23 @@ void EndNodeEditor() {
   // set node/pin to be hovered
   for (auto& node : global_node_editor->node_pool) {
     if (hovered_node_id == node.id) {
-      if (hovered_pin_id == -1) {
+      if (hovered_pin_id == -1 && global_node_editor->mouse_state == NONE) {
 	node.hovered = true;
-	// printf("node %d hovered %s\n\n", node.id, (node.hovered) ? "true" : "false");
-      } else {
-	for (auto& property : node.input_properties) {
-	  if (hovered_pin_id == property.id) {
-	    property.hovered = true;
+	break;
+      } else if (global_node_editor->mouse_state == NONE ||
+		 global_node_editor->mouse_state == CREATE_LINK) {
+	for (int p : node.input_properties) {
+	  node_property *property = FindProperty(p);
+	  if (hovered_pin_id == property->id) {
+	    property->hovered = true;
+	    if (io.MouseDown[0] && global_node_editor->mouse_state == CREATE_LINK) {
+	      global_node_editor->mouse_state = NONE;
+	      // CreateLink
+	    }
 	    break;
 	  }
 	}
-      }
+      }      
     }
   }
   
@@ -306,18 +316,18 @@ void EndNodeEditor() {
 
     draw_list->ChannelsSetCurrent(node_background(node));
     
-    for (auto& property : node.input_properties) {
-      
+    for (int p : node.input_properties) {
+      node_property *property = FindProperty(p);
       ImU32 color;
       // pin is hovered
-      if (node.id == hovered_node_id && property.id == hovered_pin_id) {
+      if (property->hovered) {
 	color = IM_COL32(0, 255, 0, 255);
       } else {
 	color = IM_COL32(200, 200, 200, 255);
       }      
       
-      draw_list->AddCircleFilled(property.pin_pos, pin_radius ,IM_COL32(50, 50, 50, 255), 16);
-      draw_list->AddCircle(property.pin_pos, pin_radius,
+      draw_list->AddCircleFilled(property->pin_pos, pin_radius ,IM_COL32(50, 50, 50, 255), 16);
+      draw_list->AddCircle(property->pin_pos, pin_radius,
 			   color,
 			   16, global_node_editor->Style_NodeOutlineWidth);      
     }   
@@ -337,12 +347,7 @@ void EndNodeEditor() {
 
 	// set node to be top node
 	if (node.layer > 0 && node.layer != global_node_editor->num_nodes) {
-	  for (auto& n : global_node_editor->node_pool) {
-	    if (n.layer > node.layer) {
-	      n.layer -= 1;
-	    }
-	  }
-	  node.layer = global_node_editor->num_nodes;
+	  set_node_to_top_layer(&node);
 	}	
       }
     }
@@ -363,6 +368,36 @@ void EndNodeEditor() {
     global_node_editor->drag_start = io.MousePos;
 
     global_node_editor->selected_nodes.clear();
+  }
+
+  // clicking a pin creates a new link
+  if (global_node_editor->mouse_in_canvas && io.MouseDown[0]
+      && hovered_pin_id != -1 && global_node_editor->mouse_state == NONE) {
+
+    global_node_editor->active_node = hovered_node_id;
+    global_node_editor->active_pin  = hovered_pin_id;            
+    global_node_editor->mouse_state = CREATE_LINK;
+  }
+
+  // draw active link
+  if (global_node_editor->mouse_state == CREATE_LINK) {
+    draw_list->ChannelsSetCurrent(TOP_CHANNEL);
+
+    node *n = FindNode(global_node_editor->active_node);
+    if (n == NULL) {
+      printf("null node id %d\n", hovered_node_id);
+    } else {
+    for (int p : n->input_properties) {
+      node_property *property = FindProperty(p);
+      if (global_node_editor->active_pin == property->id) {
+	draw_list->AddLine(property->pin_pos, global_node_editor->mouse_pos_in_canvas,
+			   IM_COL32(255, 0, 0, 255), 10);
+	break;
+      }
+    }
+    }
+    
+
   }
     
   // draw drag selection @Cleanup
@@ -450,10 +485,16 @@ void EndNodeEditor() {
   
 }
 
+link *CreateLink(int start_id, int end_id) {
+  global_node_editor->link_pool.emplace_back(start_id, end_id);
+  global_node_editor->num_links += 1;
+
+  return &global_node_editor->link_pool.back();
+}
+
 node *CreateNode(int node_id) {
   global_node_editor->node_pool.emplace_back(node_id);
   global_node_editor->node_pool.back().pos = ImGui::GetCursorScreenPos();
-
   global_node_editor->num_nodes += 1;
   
   return &global_node_editor->node_pool.back();
@@ -469,6 +510,25 @@ node *GetNode(int node_id) {
   return CreateNode(node_id);
 }
 
+node_property *FindProperty(int property_id) {
+  for (auto& property : global_node_editor->pin_pool) {
+    if (property.id == property_id) {
+      return &property;
+    }
+  }
+  return NULL;
+}
+
+node *FindNode(int node_id) {
+  for (auto& node : global_node_editor->node_pool) {
+    if (node.id == node_id) {
+      return &node;
+    }
+  }
+  return NULL;
+}
+
+
 bool NodeSelected(int node_id) {
   for (auto sn : global_node_editor->selected_nodes) {
     if (sn == node_id) {
@@ -476,6 +536,16 @@ bool NodeSelected(int node_id) {
     }
   }
   return false;
+}
+
+void set_node_to_top_layer(node *node) {
+  for (auto& n : global_node_editor->node_pool) {
+    if (n.layer > node->layer) {
+      n.layer -= 1;
+    }
+  }
+  node->layer = global_node_editor->num_nodes;
+  printf("num %d\n", global_node_editor->num_nodes);
 }
 
 void BeginNode(int node_id) {
@@ -488,7 +558,6 @@ void BeginNode(int node_id) {
     current_node->layer = global_node_editor->node_pool.size();
   }
   draw_list->ChannelsSetCurrent(node_foreground(*current_node));
-//  printf("setting node %d to layer %d\n", node_id, current_node->layer);
   
   ImGui::SetCursorScreenPos(current_node->pos);
   // printf("current_node pos: (%f, %f)\n", current_node->pos.x, current_node->pos.y);
@@ -526,21 +595,16 @@ void EndNodeProperty(node_property *property) {
   ImVec2 max = ImGui::GetItemRectMax();
   
   property->rect = ImRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
-  
-  // printf("\min.y %f, max.y %f, min-max %f \n", property->rect.Min.y, property->rect.Max.y, property->rect.Min.y + (property->rect.Max.y - property->rect.Min.y) / 2);
-  
+    
   ImVec2 pin_pos = {min.x - (global_node_editor->Style_NodeMargin) + (global_node_editor->Style_NodeOutlineWidth) / 2.0f,
 		    min.y + ((max.y - min.y) / 2)};
 
   property->pin_pos = pin_pos;
 }
 
-void BeginNodeTitle() {
-
-}
-
 void DrawGeglNode(node &ui_node) {
   GPNode::BeginNode(ui_node.id);
+  ImGui::Text("layer: %d", ui_node.layer);
   ImGui::Text(ui_node.gegl_operation_klass->name);
   ImGui::Separator();
   
@@ -550,26 +614,24 @@ void DrawGeglNode(node &ui_node) {
   }
   
   ImGui::Text("Input Properties");
-  for (auto& p : ui_node.input_properties) {
-
-    // printf("(%f, %f)\n", p.rect.Min.x, p.rect.Min.y);
-    BeginNodeProperty(&p);
+  for (int id : ui_node.input_properties) {
+    node_property *property = FindProperty(id);
+    BeginNodeProperty(property);
     
-    if      (g_type_is_a(p.gtype, GEGL_TYPE_PARAM_INT)) {
-      ImGui::Text("(INT)  -  %s", p.label);
+    if      (g_type_is_a(property->gtype, GEGL_TYPE_PARAM_INT)) {
+      ImGui::Text("(INT)  -  %s", property->label);
     }
-    else if (g_type_is_a(p.gtype, G_TYPE_DOUBLE)) {
-      ImGui::Text("(DOUBLE)  -  %s %s", g_type_name(p.gtype), p.label);
+    else if (g_type_is_a(property->gtype, G_TYPE_DOUBLE)) {
+      ImGui::Text("(DOUBLE)  -  %s %s", g_type_name(property->gtype), property->label);
     }
-    else if (g_type_is_a(p.gtype, G_TYPE_PARAM_ENUM)) {
-      ImGui::Text("(ENUM)  -  %s %s", g_type_name(p.gtype), p.label);
+    else if (g_type_is_a(property->gtype, G_TYPE_PARAM_ENUM)) {
+      ImGui::Text("(ENUM)  -  %s %s", g_type_name(property->gtype), property->label);
     }
     else {
-      ImGui::Text("%s -- %s", g_type_name(p.gtype), p.label);      
+      ImGui::Text("%s -- %s", g_type_name(property->gtype), property->label);      
     }
 
-    EndNodeProperty(&p);
-    // printf("(%f, %f)\n\n", p.rect.Min.x, p.rect.Min.y);
+    EndNodeProperty(property);
   }
 
   ImGui::Text("Output Pads");
@@ -590,7 +652,6 @@ int CreateGeglNode(GeglOperationClass *klass) {
   
   // ImVec2 p = ImGui::GetCursorScreenPos();
   printf("Operation name: %s\n", klass->name);
-  // printf("\tnode/cursor pos: (%f, %f)\n", p.x, p.y);
   
   ui_node->pos = global_node_editor->mouse_pos_in_canvas;
       
@@ -637,8 +698,9 @@ int CreateGeglNode(GeglOperationClass *klass) {
 	++value;
       }
     }
-    
-    ui_node->input_properties.emplace_back(property);
+
+    global_node_editor->pin_pool.emplace_back(property);
+    ui_node->input_properties.emplace_back(property.id);
   }
   g_free(properties); // todo is this right?
   
@@ -646,6 +708,10 @@ int CreateGeglNode(GeglOperationClass *klass) {
 
   // add output properties (? not sure if they exist)
 
+  // select new node
+  global_node_editor->selected_nodes.clear();
+  global_node_editor->selected_nodes.push_back(ui_node->id);
+  
   return 0;
 }
 

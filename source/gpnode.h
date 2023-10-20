@@ -30,7 +30,7 @@ namespace GPNode {
     
     std::vector<char*> gegl_input_pads;
     std::vector<char*> gegl_output_pads;
-    std::vector<node_property> input_properties;    
+    std::vector<int> input_properties;
     
   node(int id)
     : id(id),
@@ -43,21 +43,34 @@ namespace GPNode {
     {}
   };
 
+  struct link {
+    int start_id;
+    int end_id;
+
+    link(int start_id, int end_id) :
+      start_id(start_id),
+      end_id(end_id)
+    {}
+  };
+
   enum NodeEditorMouseState {
     NONE,
     IMGUI_INTERACTION,
     DRAGGING_NODES,
-    DRAG_SELECTION  
+    DRAG_SELECTION,
+    CREATE_LINK
   };
 
 const char *mouse_state_string(NodeEditorMouseState s);
 
   struct NodeEditor {
     std::vector<node> node_pool;
-    std::vector<node> pin_pool;
+    std::vector<node_property> pin_pool;
+    std::vector<link> link_pool;
   
     node   *current_node;
     int     num_nodes;
+    int     num_links;
     ImVec2  canvas_scrolling;
     bool    mouse_in_canvas;
     ImVec2  origin;
@@ -69,6 +82,8 @@ const char *mouse_state_string(NodeEditorMouseState s);
     //bool    dragging_selected_nodes; // "dragging" here is not the same drag as below, this is for moving nodes.
     //bool    drag_selection;          // Whereas in these two drag refers to the click and drag selection box.
     ImVec2  drag_start;              //
+    int active_node = -1;
+    int active_pin = -1;
     
     ImVec2 screen_space_MousePos;
     ImVec2 mouse_pos_in_canvas;
@@ -96,8 +111,11 @@ const char *mouse_state_string(NodeEditorMouseState s);
   void BeginNodeInput(int id);
   void EndNodeInput();
 
+  node_property *FindProperty(int property_id);
+  node *FindNode(int node_id);
   node *GetNode(int node_id);
   bool NodeSelected(int node_id);
+  void set_node_to_top_layer(node *node);
 
   extern NodeEditor *global_node_editor;
 }
