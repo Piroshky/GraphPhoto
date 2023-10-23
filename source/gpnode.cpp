@@ -215,15 +215,8 @@ void BeginNodeEditor() {
 }
 
 void EndNodeEditor() {
-  ImGuiIO& io = ImGui::GetIO();
-
-  
-  // If mouse is NOT down, and over a node, highlight the highest level node
-  
-  // If mouse is down, and over a node, make the highest level node the selected node
-
+  ImGuiIO& io = ImGui::GetIO();   
   ImDrawList* draw_list = ImGui::GetWindowDrawList();
-  // ImGuiIO& io = ImGui::GetIO();
 
   // Determine what is being hovered
   int highest_layer = -1;
@@ -258,26 +251,24 @@ void EndNodeEditor() {
   }
   
   // set node/pin to be hovered
-  for (auto& node : global_node_editor->node_pool) {
-    if (hovered_node_id == node.id) {
-      if (hovered_pin_id == -1 && global_node_editor->mouse_state == NONE) {
-	node.hovered = true;
-	break;
-      } else if (global_node_editor->mouse_state == NONE ||
-		 global_node_editor->mouse_state == CREATE_LINK) {
-	for (int p : node.input_properties) {
-	  node_property *property = FindProperty(p);
-	  if (hovered_pin_id == property->id) {
-	    property->hovered = true;
-	    if (io.MouseDown[0] && global_node_editor->mouse_state == CREATE_LINK) {
-	      global_node_editor->mouse_state = NONE;
-	      // CreateLink
-	    }
-	    break;
-	  }
-	}
-      }      
+  if (global_node_editor->mouse_state == NONE) {
+    if (hovered_pin_id == -1 && hovered_node_id != -1) {
+      node *n = FindNode(hovered_node_id);
+      n->hovered = true;
+    } else if (hovered_pin_id != -1) {
+      node_property *p = FindProperty(hovered_pin_id);
+      p->hovered = true;
     }
+  }
+  // 
+  else if (global_node_editor->mouse_state == CREATE_LINK && !io.MouseDown[0]) {
+    if (hovered_pin_id != -1) {
+      node_property *p = FindProperty(hovered_pin_id);
+      printf("need to create link from %d to %d\n", global_node_editor->active_pin, p->id);
+    }
+    global_node_editor->mouse_state = NONE;
+    global_node_editor->active_node = -1;
+    global_node_editor->active_pin = -1;
   }
   
   // Draw outlines, draw Gegl nodes
@@ -333,7 +324,7 @@ void EndNodeEditor() {
     }   
   }
   
-  // Add outline to hovered nodes
+  // Select hovered node
   for (auto& node : global_node_editor->node_pool) {
     if(node.mouse_in_node && global_node_editor->mouse_state == NONE) {
 
@@ -383,21 +374,9 @@ void EndNodeEditor() {
   if (global_node_editor->mouse_state == CREATE_LINK) {
     draw_list->ChannelsSetCurrent(TOP_CHANNEL);
 
-    node *n = FindNode(global_node_editor->active_node);
-    if (n == NULL) {
-      printf("null node id %d\n", hovered_node_id);
-    } else {
-    for (int p : n->input_properties) {
-      node_property *property = FindProperty(p);
-      if (global_node_editor->active_pin == property->id) {
-	draw_list->AddLine(property->pin_pos, global_node_editor->mouse_pos_in_canvas,
-			   IM_COL32(255, 0, 0, 255), 10);
-	break;
-      }
-    }
-    }
-    
-
+    node_property *p = FindProperty(global_node_editor->active_pin);
+    draw_list->AddLine(p->pin_pos, global_node_editor->mouse_pos_in_canvas,
+		       IM_COL32(255, 0, 0, 255), 10);    
   }
     
   // draw drag selection @Cleanup
