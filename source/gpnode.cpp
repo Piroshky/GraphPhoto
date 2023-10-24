@@ -188,35 +188,7 @@ void BeginNodeEditor() {
   ImGui::SetCursorScreenPos({0,0});
   global_node_editor->vtx_ix = draw_list->VtxBuffer.size();
 
-  // End drags, IMGUI_INTERACTION mouse state
-  if (!io.MouseDown[0] && global_node_editor->mouse_state != NONE
-      && global_node_editor->mouse_state != CREATE_LINK) {
-    global_node_editor->mouse_state = NONE;
-  }
-  
-  if (io.MouseDown[0] && global_node_editor->mouse_state == NONE && !global_node_editor->selected_nodes.empty()) {
-    for (int node_id : global_node_editor->selected_nodes) {
-      node *n = GetNode(node_id);
-      if (n->mouse_in_node) {
-	global_node_editor->mouse_state = DRAGGING_NODES;
-	break;
-      }
-    }
-  }
-  if (global_node_editor->mouse_state == DRAGGING_NODES) {
-    if (io.MouseDown[0] ) {
-      ImVec2 drag_amount = io.MouseDelta / global_node_editor->zoom;
-      for (int node_id : global_node_editor->selected_nodes) {
-	node *n = GetNode(node_id);
-	n->pos += drag_amount;
-      }
-    }
-  }
-}
-
-void EndNodeEditor() {
-  ImGuiIO& io = ImGui::GetIO();   
-  ImDrawList* draw_list = ImGui::GetWindowDrawList();
+  // new
 
   // Determine what is being hovered
   int highest_layer = -1;
@@ -241,7 +213,7 @@ void EndNodeEditor() {
       node_property *property = FindProperty(p);
       property->hovered = false;
       float dist = pow(property->pin_pos.x - io.MousePos.x , 2.0) +
-                   pow(property->pin_pos.y - io.MousePos.y , 2.0);
+	pow(property->pin_pos.y - io.MousePos.y , 2.0);
       if ((dist <= req_dist) && (dist < max_dist)) {
 	hovered_node_id = node.id;
 	highest_layer   = node.layer;
@@ -251,25 +223,112 @@ void EndNodeEditor() {
   }
   
   // set node/pin to be hovered
-  if (global_node_editor->mouse_state == NONE) {
-    if (hovered_pin_id == -1 && hovered_node_id != -1) {
-      node *n = FindNode(hovered_node_id);
-      n->hovered = true;
-    } else if (hovered_pin_id != -1) {
-      node_property *p = FindProperty(hovered_pin_id);
-      p->hovered = true;
-    }
-  }
   // 
-  else if (global_node_editor->mouse_state == CREATE_LINK && !io.MouseDown[0]) {
-    if (hovered_pin_id != -1) {
-      node_property *p = FindProperty(hovered_pin_id);
-      printf("need to create link from %d to %d\n", global_node_editor->active_pin, p->id);
-    }
-    global_node_editor->mouse_state = NONE;
-    global_node_editor->active_node = -1;
-    global_node_editor->active_pin = -1;
+ if (global_node_editor->mouse_state == CREATE_LINK && !io.MouseDown[0]) {
+
   }
+
+  if (global_node_editor->mouse_in_canvas) {
+    if (io.MouseDown[0]) {
+      switch(global_node_editor->mouse_state) {
+      case NONE: {
+	if (hovered_pin_id != -1) {
+	  // clicking a pin
+	  global_node_editor->mouse_state = CREATE_LINK;
+	  global_node_editor->active_node = -1;
+	  global_node_editor->active_pin  = hovered_pin_id;
+	  
+	} else if (hovered_node_id != -1) {
+	  // clicking a node selects it
+	  if (!NodeSelected(hovered_node_id)) {
+	    global_node_editor->selected_nodes.clear();
+	    global_node_editor->selected_nodes.push_back(hovered_node_id);
+	  }
+
+	  // moves it to the top
+	  node *node = GetNode(hovered_node_id);
+	  if (node->layer > 0 && node->layer != global_node_editor->num_nodes) {
+	    set_node_to_top_layer(node);
+	  }
+	  
+	  // sets the state to dragging node	  
+	  global_node_editor->mouse_state = DRAGGING_NODES;
+	  global_node_editor->active_node = hovered_node_id;
+	  global_node_editor->active_pin  = -1;
+	  
+	} else {
+	  // clicking on the canvas starts drag selection
+	  global_node_editor->mouse_state = DRAG_SELECTION;
+	  global_node_editor->drag_start = io.MousePos;
+
+	  global_node_editor->selected_nodes.clear();;
+	}
+	break;
+      }
+      case DRAGGING_NODES: {
+	ImVec2 drag_amount = io.MouseDelta / global_node_editor->zoom;
+	for (int node_id : global_node_editor->selected_nodes) {
+	  node *n = GetNode(node_id);
+	  n->pos += drag_amount;
+	}	
+	break;
+      }
+      case CREATE_LINK: {
+	node_property *p = FindProperty(global_node_editor->active_pin);
+	p->hovered = true;
+	if (hovered_pin_id != -1) {
+	  p = FindProperty(hovered_pin_id);
+	  p->hovered = true;
+	}
+	break;
+      }
+      }
+    } else { // mouse up
+      switch(global_node_editor->mouse_state) {
+      case NONE: {
+	if (hovered_pin_id != -1) {
+	  node_property *p = FindProperty(hovered_pin_id);
+	  p->hovered = true;
+	} else if (hovered_node_id != -1) {
+	  node *node = FindNode(hovered_node_id);
+	  node->hovered = true;
+	}
+	break;
+      }
+	
+      case DRAG_SELECTION: {
+	global_node_editor->mouse_state = NONE;
+	break;
+      }
+      case DRAGGING_NODES: {
+	global_node_editor->mouse_state = NONE;
+	break;
+      }
+      case CREATE_LINK: {
+	if (hovered_pin_id != -1) {
+	  node_property *p = FindProperty(hovered_pin_id);
+	  p->hovered = true;
+	  printf("need to create link from %d to %d\n", global_node_editor->active_pin, p->id);
+	}
+	global_node_editor->mouse_state = NONE;
+	global_node_editor->active_node = -1;
+	global_node_editor->active_pin = -1;
+	
+	break;
+      }
+      }
+    }
+  } else {
+    global_node_editor->mouse_state = NONE;
+  }
+
+  // endnew
+    
+}
+
+void EndNodeEditor() {
+  ImGuiIO& io = ImGui::GetIO();   
+  ImDrawList* draw_list = ImGui::GetWindowDrawList();
   
   // Draw outlines, draw Gegl nodes
   for (auto& node : global_node_editor->node_pool) {
@@ -299,6 +358,12 @@ void EndNodeEditor() {
 		       0.0f, 0, global_node_editor->Style_NodeOutlineWidth);
   }
 
+  // This is how you tell if a DearImgui widget is active apparently.
+  // IsAnyItemActive doesn't do what you want, it returns true whenever the mouse is clicked,
+  // unless the mouse is over the true window's background.
+  if (ImGui::IsMouseClicked(0) && ImGui::IsAnyItemActive()) {
+    global_node_editor->mouse_state = IMGUI_INTERACTION;
+  }
 
   // Draw Pins
   for (auto& node : global_node_editor->node_pool) {
@@ -324,51 +389,6 @@ void EndNodeEditor() {
     }   
   }
   
-  // Select hovered node
-  for (auto& node : global_node_editor->node_pool) {
-    if(node.mouse_in_node && global_node_editor->mouse_state == NONE) {
-
-      if (!node.hovered) {
-	continue;
-      }
-
-      if (io.MouseDown[0] && !NodeSelected(node.id)) {
-	global_node_editor->selected_nodes.clear();
-	global_node_editor->selected_nodes.push_back(node.id);
-
-	// set node to be top node
-	if (node.layer > 0 && node.layer != global_node_editor->num_nodes) {
-	  set_node_to_top_layer(&node);
-	}	
-      }
-    }
-  }
-
-  // This is how you tell if a DearImgui widget is active apparently.
-  // IsAnyItemActive doesn't do what you want, it returns true whenever the mouse is clicked,
-  // unless the mouse is over the true window's background.
-  if (ImGui::IsMouseClicked(0) && ImGui::IsAnyItemActive()) {
-    global_node_editor->mouse_state = IMGUI_INTERACTION;
-  }
-
-  // clicking canvas starts drag selection, clears selected_nodes
-  bool mouse_in_any_node = (hovered_node_id != -1);
-  if (global_node_editor->mouse_in_canvas && io.MouseDown[0]
-      && !mouse_in_any_node && global_node_editor->mouse_state == NONE) {
-    global_node_editor->mouse_state = DRAG_SELECTION;
-    global_node_editor->drag_start = io.MousePos;
-
-    global_node_editor->selected_nodes.clear();
-  }
-
-  // clicking a pin creates a new link
-  if (global_node_editor->mouse_in_canvas && io.MouseDown[0]
-      && hovered_pin_id != -1 && global_node_editor->mouse_state == NONE) {
-
-    global_node_editor->active_node = hovered_node_id;
-    global_node_editor->active_pin  = hovered_pin_id;            
-    global_node_editor->mouse_state = CREATE_LINK;
-  }
 
   // draw active link
   if (global_node_editor->mouse_state == CREATE_LINK) {
@@ -433,8 +453,6 @@ void EndNodeEditor() {
 
   int vertices_count = draw_list->VtxBuffer.size() - global_node_editor->vtx_ix;
   
-  // printf("vtx_ix %d\n", global_node_editor->vtx_ix);
-  // printf("vtx_size endeditor %d\n\n", draw_list->VtxBuffer.size());
   if (vertices_count > 0) {
     ImDrawVert *vert = &draw_list->VtxBuffer[draw_list->VtxBuffer.size() - (vertices_count)];
     for(int i = 0; i < vertices_count; ++i) {
@@ -443,11 +461,7 @@ void EndNodeEditor() {
       vert++;
     }
   }
-  // printf("vert_count %d\n", vertices_count);
-
-  // vtx_ix = draw_list->VtxBuffer.size();
-  // printf("after vtx_ix %d\n", vtx_ix);           
-
+  
   ImVec4 &clip_rect = draw_list->CmdBuffer[global_node_editor->canvas_clip_rect_ix].ClipRect;
 
   clip_rect.x = canvas_p0.x;
@@ -524,7 +538,6 @@ void set_node_to_top_layer(node *node) {
     }
   }
   node->layer = global_node_editor->num_nodes;
-  printf("num %d\n", global_node_editor->num_nodes);
 }
 
 void BeginNode(int node_id) {
