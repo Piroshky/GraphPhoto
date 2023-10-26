@@ -2,15 +2,19 @@
 #include <imgui.h>
 #include <gegl.h>
 #include <gegl-plugin.h>
+#include <gegl-types.h>
 #include <vector>
 
 namespace GPNode {
 
   enum NODE_DRAW_TYPE {CUSTOM, GEGL};
+  enum PROPERTY_DIRECTION {INPUT, OUTPUT};
 
   struct node_property {
     int     id;
+    int     node_id;
     char   *label;
+    PROPERTY_DIRECTION direction;
     GType   gtype;
     ImRect  rect;
     ImVec2  pin_pos;
@@ -28,8 +32,8 @@ namespace GPNode {
     NODE_DRAW_TYPE draw_type;
     GeglOperationClass *gegl_operation_klass;
     
-    std::vector<char*> gegl_input_pads;
-    std::vector<char*> gegl_output_pads;
+    std::vector<int> gegl_input_pads;
+    std::vector<int> gegl_output_pads;
     std::vector<int> input_properties;
     
   node(int id)

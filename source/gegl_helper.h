@@ -1,6 +1,7 @@
 #pragma once
 #include <gegl.h>
 #include <gegl-plugin.h>
+#include <gegl-node.h>
 #include <map>
 #include <vector>
 

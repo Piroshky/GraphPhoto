@@ -37,6 +37,7 @@ inline int node_background(node n) {
 int item_id_count;
 
 int CreateGeglNode(GeglOperationClass *klass);
+void CreateLink(int start_id, int end_id);
 void DrawGeglNode(node &ui_node);
   
 NodeEditor *global_node_editor = NULL;
@@ -188,8 +189,6 @@ void BeginNodeEditor() {
   ImGui::SetCursorScreenPos({0,0});
   global_node_editor->vtx_ix = draw_list->VtxBuffer.size();
 
-  // new
-
   // Determine what is being hovered
   int highest_layer = -1;
   int hovered_node_id = -1;
@@ -220,14 +219,30 @@ void BeginNodeEditor() {
 	hovered_pin_id  = property->id;
       }
     }
+    for (int p : node.gegl_input_pads) {
+      node_property *property = FindProperty(p);
+      property->hovered = false;
+      float dist = pow(property->pin_pos.x - io.MousePos.x , 2.0) +
+	pow(property->pin_pos.y - io.MousePos.y , 2.0);
+      if ((dist <= req_dist) && (dist < max_dist)) {
+	hovered_node_id = node.id;
+	highest_layer   = node.layer;
+	hovered_pin_id  = property->id;
+      }
+    }
+    for (int p : node.gegl_output_pads) {
+      node_property *property = FindProperty(p);
+      property->hovered = false;
+      float dist = pow(property->pin_pos.x - io.MousePos.x , 2.0) +
+	pow(property->pin_pos.y - io.MousePos.y , 2.0);
+      if ((dist <= req_dist) && (dist < max_dist)) {
+	hovered_node_id = node.id;
+	highest_layer   = node.layer;
+	hovered_pin_id  = property->id;
+      }
+    }
   }
   
-  // set node/pin to be hovered
-  // 
- if (global_node_editor->mouse_state == CREATE_LINK && !io.MouseDown[0]) {
-
-  }
-
   if (global_node_editor->mouse_in_canvas) {
     if (io.MouseDown[0]) {
       switch(global_node_editor->mouse_state) {
@@ -278,7 +293,12 @@ void BeginNodeEditor() {
 	p->hovered = true;
 	if (hovered_pin_id != -1) {
 	  p = FindProperty(hovered_pin_id);
-	  p->hovered = true;
+	  node_property *a = FindProperty(global_node_editor->active_pin);
+	  if (a->id != p->id &&
+	      a->node_id != p->node_id &&
+	      a->direction != p->direction) {
+	    p->hovered = true;	    
+	  }
 	}
 	break;
       }
@@ -308,7 +328,18 @@ void BeginNodeEditor() {
 	if (hovered_pin_id != -1) {
 	  node_property *p = FindProperty(hovered_pin_id);
 	  p->hovered = true;
-	  printf("need to create link from %d to %d\n", global_node_editor->active_pin, p->id);
+	  node_property *a = FindProperty(global_node_editor->active_pin);
+	  if (a->id != p->id &&
+	      a->node_id != p->node_id &&
+	      a->direction != p->direction) {
+	    if (a->direction == INPUT) {
+	      CreateLink(a->id, p->id);
+	    } else {
+	      CreateLink(p->id, a->id);
+	    }
+	    printf("need to create link from %d to %d\n", global_node_editor->active_pin, p->id);
+	  }	  
+
 	}
 	global_node_editor->mouse_state = NONE;
 	global_node_editor->active_node = -1;
@@ -321,9 +352,6 @@ void BeginNodeEditor() {
   } else {
     global_node_editor->mouse_state = NONE;
   }
-
-  // endnew
-    
 }
 
 void EndNodeEditor() {
@@ -365,28 +393,82 @@ void EndNodeEditor() {
     global_node_editor->mouse_state = IMGUI_INTERACTION;
   }
 
+  // draw highlight on selected nodes
+  for (int id : global_node_editor->selected_nodes) {
+    node *n = GetNode(id); // @Cleanup very stupid n^2 stuff here, just temporary for now
+    draw_list->ChannelsSetCurrent(node_foreground(*n));
+    draw_list->AddRect(n->size.Min,
+		       n->size.Max,
+		       IM_COL32(255, 0, 0, 255));
+  }
+  
   // Draw Pins
   for (auto& node : global_node_editor->node_pool) {
     int pin_radius = global_node_editor->Style_PinRadius;    
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
-    draw_list->ChannelsSetCurrent(node_background(node));
+    draw_list->ChannelsSetCurrent(node_foreground(node));
     
     for (int p : node.input_properties) {
       node_property *property = FindProperty(p);
       ImU32 color;
-      // pin is hovered
       if (property->hovered) {
 	color = IM_COL32(0, 255, 0, 255);
       } else {
 	color = IM_COL32(200, 200, 200, 255);
       }      
       
-      draw_list->AddCircleFilled(property->pin_pos, pin_radius ,IM_COL32(50, 50, 50, 255), 16);
-      draw_list->AddCircle(property->pin_pos, pin_radius,
+      draw_list->AddCircleFilled(property->pin_pos,
+				 pin_radius,
+				 IM_COL32(50, 50, 50, 255),
+				 16);
+      draw_list->AddCircle(property->pin_pos,
+			   pin_radius,
 			   color,
-			   16, global_node_editor->Style_NodeOutlineWidth);      
-    }   
+			   16,
+			   global_node_editor->Style_NodeOutlineWidth);      
+    }
+
+    for (int p : node.gegl_input_pads) {
+      node_property *property = FindProperty(p);
+      ImU32 color;
+      if (property->hovered) {
+	color = IM_COL32(0, 255, 0, 255);
+      } else {
+	color = IM_COL32(200, 200, 200, 255);
+      }      
+
+      draw_list->AddRectFilled(property->pin_pos - pin_radius,
+			       property->pin_pos + pin_radius,
+			       IM_COL32(50, 50, 50, 255), 0, 0);
+
+      draw_list->AddRect(property->pin_pos - pin_radius,
+			 property->pin_pos + pin_radius,
+			 color,
+			 0,
+			 0,
+			 2);      
+    }
+    for (int p : node.gegl_output_pads) {
+      node_property *property = FindProperty(p);
+      ImU32 color;
+      if (property->hovered) {
+	color = IM_COL32(0, 255, 0, 255);
+      } else {
+	color = IM_COL32(200, 200, 200, 255);
+      }      
+
+      draw_list->AddRectFilled(property->pin_pos - pin_radius,
+			       property->pin_pos + pin_radius,
+			       IM_COL32(50, 50, 50, 255), 0, 0);
+
+      draw_list->AddRect(property->pin_pos - pin_radius,
+			 property->pin_pos + pin_radius,
+			 color,
+			 0,
+			 0,
+			 2);      
+    }
   }
   
 
@@ -397,6 +479,14 @@ void EndNodeEditor() {
     node_property *p = FindProperty(global_node_editor->active_pin);
     draw_list->AddLine(p->pin_pos, global_node_editor->mouse_pos_in_canvas,
 		       IM_COL32(255, 0, 0, 255), 10);    
+  }
+
+  // draw links
+  draw_list->ChannelsSetCurrent(0);
+  for (link l : global_node_editor->link_pool) {
+    node_property *start = FindProperty(l.start_id);
+    node_property *end = FindProperty(l.end_id);
+    draw_list->AddLine(start->pin_pos, end->pin_pos, IM_COL32(0, 0, 255, 255), 10);
   }
     
   // draw drag selection @Cleanup
@@ -435,15 +525,6 @@ void EndNodeEditor() {
     
   }
 
-  // draw highlight on selected nodes
-  for (int id : global_node_editor->selected_nodes) {
-    node *n = GetNode(id); // @Cleanup very stupid n^2 stuff here, just temporary for now
-    draw_list->ChannelsSetCurrent(node_foreground(*n));
-    draw_list->AddRect(n->size.Min,
-		       n->size.Max,
-		       IM_COL32(255, 0, 0, 255));
-  }
-
   draw_list->ChannelsMerge();
            
   // Transform canvas points to screen points
@@ -474,15 +555,12 @@ void EndNodeEditor() {
   //// Restore mouse position
   io.MousePos = global_node_editor->screen_space_MousePos;
   
-  ImGui::EndChild();
-  
+  ImGui::EndChild(); 
 }
 
-link *CreateLink(int start_id, int end_id) {
+void CreateLink(int start_id, int end_id) {  
   global_node_editor->link_pool.emplace_back(start_id, end_id);
   global_node_editor->num_links += 1;
-
-  return &global_node_editor->link_pool.back();
 }
 
 node *CreateNode(int node_id) {
@@ -601,8 +679,13 @@ void DrawGeglNode(node &ui_node) {
   ImGui::Separator();
   
   ImGui::Text("Input Pads");
-  for (auto p : ui_node.gegl_input_pads) {
-    ImGui::Text(p);
+  for (int pad_id : ui_node.gegl_input_pads) {
+    node_property *property = FindProperty(pad_id);
+
+    BeginNodeProperty(property);
+    ImGui::Text(property->label);
+    EndNodeProperty(property);    
+    
   }
   
   ImGui::Text("Input Properties");
@@ -627,8 +710,12 @@ void DrawGeglNode(node &ui_node) {
   }
 
   ImGui::Text("Output Pads");
-  for (auto p : ui_node.gegl_output_pads) {
-    ImGui::Text(p);
+  for (auto pad_id : ui_node.gegl_output_pads) {
+    node_property *property = FindProperty(pad_id);
+
+    BeginNodeProperty(property);
+    ImGui::Text(property->label);    
+    EndNodeProperty(property);
   }
   
   GPNode::EndNode();
@@ -642,7 +729,6 @@ int CreateGeglNode(GeglOperationClass *klass) {
   ui_node->draw_type = GEGL;
   ui_node->gegl_operation_klass = klass;
   
-  // ImVec2 p = ImGui::GetCursorScreenPos();
   printf("Operation name: %s\n", klass->name);
   
   ui_node->pos = global_node_editor->mouse_pos_in_canvas;
@@ -651,8 +737,20 @@ int CreateGeglNode(GeglOperationClass *klass) {
   printf("Input Pads:\n");
   gchar ** input_pads = gegl_node_list_input_pads(gegl_node);
   for (char **c = input_pads; c != NULL && *c != 0; ++c) {
+
+    node_property property;
+    property.direction = INPUT;
+    property.node_id = node_id;
+    property.label = strdup(*c);
+    property.gtype = g_type_from_name("GeglPad");
+    item_id_count += 1;
+    property.id = item_id_count;
+    property.hovered = false;
+
+    global_node_editor->pin_pool.emplace_back(property);
+    ui_node->gegl_input_pads.emplace_back(property.id);
+    
     g_print("\t\t%s\n", *c);
-    ui_node->gegl_input_pads.emplace_back(strdup(*c));
   }
   g_strfreev(input_pads);
 
@@ -660,8 +758,20 @@ int CreateGeglNode(GeglOperationClass *klass) {
   printf("Output Pads:\n");
   gchar ** output_pads = gegl_node_list_output_pads(gegl_node);
   for (char **c = output_pads; c != NULL && *c != 0; ++c) {
-    g_print("\t\t%s\n", *c);
-    ui_node->gegl_output_pads.emplace_back(strdup(*c));
+
+    node_property property;
+    property.direction = OUTPUT;
+    property.node_id = node_id;
+    property.label = strdup(*c);
+    property.gtype = g_type_from_name("GeglPad");
+    item_id_count += 1;
+    property.id = item_id_count;
+    property.hovered = false;
+
+    global_node_editor->pin_pool.emplace_back(property);
+    ui_node->gegl_output_pads.emplace_back(property.id);
+    
+    g_print("\t\t%s\n", *c);   
   }
   g_strfreev(output_pads);
   
@@ -671,6 +781,8 @@ int CreateGeglNode(GeglOperationClass *klass) {
   GParamSpec **properties = g_object_class_list_properties((GObjectClass*) klass, &n_properties);
   for (unsigned int j = 0; j < n_properties; ++j) {
     node_property property;
+    property.direction = INPUT;
+    property.node_id = node_id;
     property.label = strdup(g_param_spec_get_nick(properties[j]));
     property.gtype = G_PARAM_SPEC_TYPE(properties[j]);
     item_id_count += 1;
