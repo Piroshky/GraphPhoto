@@ -31,6 +31,7 @@ namespace GPNode {
 
     NODE_DRAW_TYPE draw_type;
     GeglOperationClass *gegl_operation_klass;
+    GeglNode *gegl_node;
     
     std::vector<int> gegl_input_pads;
     std::vector<int> gegl_output_pads;

@@ -37,7 +37,7 @@ inline int node_background(node n) {
 int item_id_count;
 
 int CreateGeglNode(GeglOperationClass *klass);
-void CreateLink(int start_id, int end_id);
+void CreateLink(node_property *a, node_property *b);
 void DrawGeglNode(node &ui_node);
   
 NodeEditor *global_node_editor = NULL;
@@ -60,8 +60,6 @@ void InitializeNodeEditor() {
 }
 
 void BeginNodeEditor() {
-
-  //// Save mouse pos
   ImGuiIO& io = ImGui::GetIO();
   
   //// Draw the canvas
@@ -85,16 +83,12 @@ void BeginNodeEditor() {
       if (ImGui::BeginMenu(c.first.c_str())) {
 	for (auto op : c.second.operations) {
 	  if (ImGui::MenuItem(op.klass->name, NULL, false, true)) {
-	    printf("context menu item pressed\n");
-
 	    CreateGeglNode(op.klass);
 	  }	  
 	}
 	ImGui::EndMenu();
       }
-
     }
-
     ImGui::EndPopup();
   }
   
@@ -107,41 +101,27 @@ void BeginNodeEditor() {
   // draw_list->AddRect(canvas_p0, canvas_p1, IM_COL32(255, 255, 255, 255));
 
   global_node_editor->mouse_in_canvas = ImGui::IsWindowHovered() || ImGui::IsWindowFocused(); // Hovered
-
-  // if (io.MouseDown[ImGuiMouseButton_Middle]) {
-  //   printf("middle (%f, %f)\n", io.MouseDelta.x, io.MouseDelta.y);
-  //   printf("mouse in canvas %s\n", global_node_editor->mouse_in_canvas ? "true" : "false");
-  //   printf("imgui call %s\n",
-  // 	   ImGui::IsMouseDragging(ImGuiMouseButton_Middle, 0.0f) ? "true" : "false");
-  // }
-  // if (io.MouseDown[ImGuiMouseButton_Right]) {
-  //   printf("right (%f, %f)\n", io.MouseDelta.x, io.MouseDelta.y);
-  //   printf("mouse in canvas %s\n", global_node_editor->mouse_in_canvas ? "true" : "false");
-  //   printf("imgui call %s\n",
-  // 	   ImGui::IsMouseDragging(ImGuiMouseButton_Right, 0.0f) ? "true" : "false");
-  // }
-
-  
+ 
   // Pan (we use a zero mouse threshold when there's no context menu)
   // You may decide to make that threshold dynamic based on whether the mouse is hovering something etc.
   const float mouse_threshold_for_pan = global_node_editor->grid_enabled ? 0.0f : 0.0f;
-  if (global_node_editor->mouse_in_canvas && ImGui::IsMouseDragging(ImGuiMouseButton_Middle, mouse_threshold_for_pan))
+  if (global_node_editor->mouse_in_canvas &&
+      ImGui::IsMouseDragging(ImGuiMouseButton_Middle, mouse_threshold_for_pan))
   {
     global_node_editor->canvas_scrolling.x += io.MouseDelta.x;
     global_node_editor->canvas_scrolling.y += io.MouseDelta.y;
   }
 
-  ImVec2 origin(canvas_p0.x + global_node_editor->canvas_scrolling.x, canvas_p0.y + global_node_editor->canvas_scrolling.y); // Canvas origin in screen space
+  ImVec2 origin(canvas_p0.x + global_node_editor->canvas_scrolling.x,
+		canvas_p0.y + global_node_editor->canvas_scrolling.y); // Canvas origin in screen space
 
   const ImVec2 mouse_widget_pos(io.MousePos.x - canvas_p0.x, io.MousePos.y - canvas_p0.y);
-  const ImVec2 mouse_pos_in_canvas((io.MousePos.x - origin.x) / global_node_editor->zoom, (io.MousePos.y - origin.y) / global_node_editor->zoom);
-  ImVec2 mpic;
-  mpic.y = mouse_pos_in_canvas.y;
-  mpic.x = mouse_pos_in_canvas.x;
-
+  const ImVec2 mouse_pos_in_canvas((io.MousePos.x - origin.x) / global_node_editor->zoom,
+				   (io.MousePos.y - origin.y) / global_node_editor->zoom);
+  
   global_node_editor->screen_space_MousePos = io.MousePos;
-  global_node_editor->mouse_pos_in_canvas   = mpic;
-  io.MousePos = mpic;
+  global_node_editor->mouse_pos_in_canvas   = mouse_pos_in_canvas;
+  io.MousePos = mouse_pos_in_canvas;
   io.MouseDrawCursor = true;
 
   // Handle canvas global_node_editor->zoom
@@ -162,7 +142,6 @@ void BeginNodeEditor() {
   global_node_editor->origin = origin;
 
 
-
   // Create 2 channels per node, one for background, one for main content
   ImDrawListSplitter& splitter = draw_list->_Splitter;
   int num_channels = 2 * global_node_editor->node_pool.size();
@@ -177,11 +156,11 @@ void BeginNodeEditor() {
   ImGui::PushClipRect(canvas_clip_p0, canvas_clip_p1, false);
   global_node_editor->canvas_clip_rect_ix = draw_list->CmdBuffer.size() - 1;
           
-  if (global_node_editor->grid_enabled)
-  {
+  if (global_node_editor->grid_enabled) {
     const float GRID_STEP = 64.0f * global_node_editor->zoom;
     for (float x = fmodf(global_node_editor->canvas_scrolling.x, GRID_STEP); x < canvas_sz.x; x += GRID_STEP)
       draw_list->AddLine(ImVec2(canvas_p0.x + x, canvas_p0.y), ImVec2(canvas_p0.x + x, canvas_p1.y), IM_COL32(200, 200, 200, 40));
+
     for (float y = fmodf(global_node_editor->canvas_scrolling.y, GRID_STEP); y < canvas_sz.y; y += GRID_STEP)
       draw_list->AddLine(ImVec2(canvas_p0.x, canvas_p0.y + y), ImVec2(canvas_p1.x, canvas_p0.y + y), IM_COL32(200, 200, 200, 40));
   }
@@ -302,6 +281,10 @@ void BeginNodeEditor() {
 	}
 	break;
       }
+      default:
+	// IMGUI_INTERACTION might need to switch to none
+	// DRAG_SELECTION -> do nothing
+	break;
       }
     } else { // mouse up
       switch(global_node_editor->mouse_state) {
@@ -332,14 +315,8 @@ void BeginNodeEditor() {
 	  if (a->id != p->id &&
 	      a->node_id != p->node_id &&
 	      a->direction != p->direction) {
-	    if (a->direction == INPUT) {
-	      CreateLink(a->id, p->id);
-	    } else {
-	      CreateLink(p->id, a->id);
-	    }
-	    printf("need to create link from %d to %d\n", global_node_editor->active_pin, p->id);
-	  }	  
-
+	    CreateLink(a, p);	    
+	  }
 	}
 	global_node_editor->mouse_state = NONE;
 	global_node_editor->active_node = -1;
@@ -347,6 +324,9 @@ void BeginNodeEditor() {
 	
 	break;
       }
+      case IMGUI_INTERACTION:
+	// todo
+	break;
       }
     }
   } else {
@@ -558,8 +538,25 @@ void EndNodeEditor() {
   ImGui::EndChild(); 
 }
 
-void CreateLink(int start_id, int end_id) {  
-  global_node_editor->link_pool.emplace_back(start_id, end_id);
+bool create_gegl_link(node_property *a, node_property *b) {
+  node *start = FindNode(a->node_id);
+  node *end   = FindNode(b->node_id);
+  return gegl_node_connect(start->gegl_node, a->label,
+			      end->gegl_node,   b->label);
+}
+
+void CreateLink(node_property *a, node_property *b) {  
+  if (a->direction == INPUT) {
+    std::swap(a, b);
+  }  
+
+  if (g_type_is_a(a->gtype, g_type_from_name("GeglPad"))) {
+    if (!create_gegl_link(a, b)) {
+      return;
+    }
+  }
+  
+  global_node_editor->link_pool.emplace_back(a->id, b->id);
   global_node_editor->num_links += 1;
 }
 
@@ -623,16 +620,12 @@ void BeginNode(int node_id) {
   global_node_editor->current_node = current_node;
 
   ImDrawList* draw_list = ImGui::GetWindowDrawList();
-  //printf("current_node->layer %d\n", current_node->layer);
   if (current_node->layer == 0) {
     current_node->layer = global_node_editor->node_pool.size();
   }
   draw_list->ChannelsSetCurrent(node_foreground(*current_node));
   
   ImGui::SetCursorScreenPos(current_node->pos);
-  // printf("current_node pos: (%f, %f)\n", current_node->pos.x, current_node->pos.y);
-  // ImVec2 p = ImGui::GetCursorScreenPos();
-  // printf("cursorPos: (%f, %f)\n", p.x, p.y);
   ImGui::PushID(current_node->id);
 
   ImGui::BeginGroup();
@@ -727,6 +720,7 @@ int CreateGeglNode(GeglOperationClass *klass) {
   int node_id = item_id_count;
   node *ui_node = CreateNode(node_id);
   ui_node->draw_type = GEGL;
+  ui_node->gegl_node = gegl_node;
   ui_node->gegl_operation_klass = klass;
   
   printf("Operation name: %s\n", klass->name);
@@ -808,10 +802,6 @@ int CreateGeglNode(GeglOperationClass *klass) {
   }
   g_free(properties); // todo is this right?
   
-  // Add output pads (? not sure if they exist)
-
-  // add output properties (? not sure if they exist)
-
   // select new node
   global_node_editor->selected_nodes.clear();
   global_node_editor->selected_nodes.push_back(ui_node->id);
