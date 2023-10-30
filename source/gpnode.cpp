@@ -3,6 +3,9 @@
 #include <limits>
 #include <math.h>
 
+#include <GL/gl3w.h>    // This example is using gl3w to access OpenGL functions (because it is small). You may use glew/glad/glLoadGen/etc. whatever already works for you.
+#include <GLFW/glfw3.h>
+
 #include "imgui_internal.h"
 #include "gpnode.h"
 #include "gegl_helper.h"
@@ -39,6 +42,7 @@ int item_id_count;
 int CreateGeglNode(GeglOperationClass *klass);
 void CreateLink(NodeProperty *a, NodeProperty *b);
 void DrawGeglNode(Node &ui_node);
+void CreateCanvasNode();
   
 NodeEditor *global_node_editor = NULL;
 
@@ -61,6 +65,7 @@ void InitializeNodeEditor() {
 
 void BeginNodeEditor() {
   ImGuiIO& io = ImGui::GetIO();
+  static bool run_once = true;
   
   //// Draw the canvas
   ImGui::BeginChild("canvas_child_window",
@@ -90,6 +95,11 @@ void BeginNodeEditor() {
       }
     }
     ImGui::EndPopup();
+  }
+
+  if (run_once) {
+    CreateCanvasNode();
+    run_once = false;
   }
   
   global_node_editor->canvas_p0 = canvas_p0;
@@ -341,7 +351,7 @@ void EndNodeEditor() {
   
   // Draw outlines, draw Gegl nodes
   for (auto& node : global_node_editor->node_pool) {
-    if (node.draw_type == GEGL) {
+    if (node.draw_type == GEGL || node.draw_type == CANVAS) {
       DrawGeglNode(node);
     }
 
@@ -719,11 +729,39 @@ void DrawGeglNode(Node &ui_node) {
   GPNode::EndNode();
 }
 
+// void DrawCanvasNode(Node &ui_node) {
+//   GPNode::BeginNode(ui_node.id);
+//   ImGui::Text("layer: %d", ui_node.layer);
+  
+//   GPNode::EndNode();
+// }
+
+void CreateTexture(const void* data, int width, int height) {
+  global_node_editor->textures.resize(global_node_editor->textures.size() + 1);
+  ImTextureID& texture = global_node_editor->textures.back();
+
+  // Upload texture to graphics system
+  glGenTextures(1, (GLuint*)&texture);
+  glBindTexture(GL_TEXTURE_2D, (GLuint)(intptr_t)texture);
+  
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+
+  // texture.Width  = width;
+  // texture.Height = height;
+
+  // return reinterpret_cast<ImTextureID>(static_cast<std::intptr_t>(texture.TextureID));
+}
+
 void CreateCanvasNode() {
 
   item_id_count += 1;
   int node_id = item_id_count;
   Node *ui_node = CreateNode(node_id);
+
+  printf("canvas node layer %d\n", ui_node->layer);
   
   GeglNode *sink = gegl_node_new_child(global_node_editor->graph,
 				       "operation", "gegl:buffer-sink",

@@ -134,6 +134,8 @@ int main(int, char**)
 
 	ImGui::Begin("GraphPhoto");
 	ImGui::Text("And this is my text");
+
+	bool run_once = true;
 	
 	if (ImGui::BeginTabBar("##TabBar"))
 	{
@@ -177,7 +179,7 @@ int main(int, char**)
 	    GPNode::BeginNode(3);
 	    ImGui::Text("This is my third node");
 	    ImGui::Text("some more text");
-	    GPNode::EndNode();
+	    GPNode::EndNode();	    
 	  
 	    GPNode::EndNodeEditor();
 	  

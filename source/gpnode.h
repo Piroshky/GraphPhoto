@@ -4,6 +4,7 @@
 #include <gegl-plugin.h>
 #include <gegl-types.h>
 #include <vector>
+#include <imgui_impl_opengl3.h>
 
 namespace GPNode {
 
@@ -75,6 +76,7 @@ struct NodeEditor {
   std::vector<Node> node_pool;
   std::vector<NodeProperty> pin_pool;
   std::vector<Link> link_pool;
+  std::vector<ImTextureID> textures;
   
   Node   *current_node;
   int     num_nodes;
@@ -106,8 +108,7 @@ struct NodeEditor {
   int Style_NodeOutlineWidth = 2;
   int Style_PinRadius = 5;
     
-  GeglNode *graph;
-    
+  GeglNode *graph;    
 };
   
 void InitializeNodeEditor();
@@ -118,6 +119,8 @@ void BeginNode(int node_id);
 void EndNode();
 void BeginNodeInput(int id);
 void EndNodeInput();
+
+void CreateCanvasNode();
 
 NodeProperty *FindProperty(int property_id);
 Node *FindNode(int node_id);
