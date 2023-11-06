@@ -25,7 +25,7 @@ DEPENDS = ${OBJS:.o=.d}
 UNAME_S := $(shell uname -s)
 LINUX_GL_LIBS = -lGL
 
-CXXFLAGS = -std=c++11 -I$(IMGUI_DIR) -I$(IMGUI_DIR)/backends -I../libs/gl3w
+CXXFLAGS = -std=c++11 -I$(IMGUI_DIR) -I$(IMGUI_DIR)/backends -I../libs/gl3w -I../libs
 CXXFLAGS += -g -Wall -Wformat -MMD
 LIBS =
 

@@ -10,6 +10,11 @@
 #include "gpnode.h"
 #include "gegl_helper.h"
 
+#define STB_IMAGE_IMPLEMENTATION
+extern "C" {
+#include "stb_image.h"
+}
+
 #define IMGUI_DEFINE_MATH_OPERATORS
 
 namespace GPNode {
@@ -28,7 +33,7 @@ const char *mouse_state_string(NodeEditorMouseState s) {
   }
 }
 
-#define TOP_CHANNEL (global_node_editor->num_nodes * 2)
+#define TOP_CHANNEL ((global_node_editor->num_nodes * 2)+1)
 
 inline int node_foreground(Node n) {
   return n.layer * 2;  
@@ -53,6 +58,8 @@ void InitializeNodeEditor() {
   
   // Initialize GEGL duh
   initialize_gegl();
+
+  gl3wInit();
   
   global_node_editor->graph = gegl_node_new();
   
@@ -61,6 +68,9 @@ void InitializeNodeEditor() {
   //global_node_editor->drag_selection = false;
   global_node_editor->mouse_in_canvas = false;
   global_node_editor->num_nodes = 0;
+
+  CreateCanvasNode();
+  
 }
 
 void BeginNodeEditor() {
@@ -98,7 +108,7 @@ void BeginNodeEditor() {
   }
 
   if (run_once) {
-    CreateCanvasNode();
+    // CreateCanvasNode();
     run_once = false;
   }
   
@@ -136,7 +146,7 @@ void BeginNodeEditor() {
   io.MouseDrawCursor = true;
 
   // Handle canvas global_node_editor->zoom
-  if (io.MouseWheel != 0) {
+  if (global_node_editor->mouse_in_canvas && io.MouseWheel != 0) {
     const double zoom_delta = io.MouseWheel * 0.1;
     const double new_zoom   = global_node_editor->zoom + zoom_delta;
             
@@ -153,12 +163,20 @@ void BeginNodeEditor() {
   global_node_editor->origin = origin;
 
 
-  // Create 2 channels per node, one for background, one for main content
+  // Create 2 channels per node, one for background, one for main content.
+  // layer numbering starts at 1, channel zero used for canvas background
+  //                     
+  //                    (one node)
+  //           canvas    layer 1   layer 2   ...   layer n    top layer
+  // channels    0         1  2     3  4          2n-1  2n    top channel
+  //                       ┃  ┃   
+  //            background━┛  ┗━foreground
+  
   ImDrawListSplitter& splitter = draw_list->_Splitter;
   int num_channels = 2 * global_node_editor->node_pool.size();
   num_channels = (num_channels < 10) ? 10 : num_channels;
 
-  splitter.Split(draw_list, 1 + num_channels);
+  splitter.Split(draw_list, 2 + num_channels);
   
   // Draw grid            
   ImVec2 canvas_clip_p0((canvas_p0.x - origin.x) / global_node_editor->zoom, (canvas_p0.y - origin.y) / global_node_editor->zoom);
@@ -546,7 +564,18 @@ void EndNodeEditor() {
   //// Restore mouse position
   io.MousePos = global_node_editor->screen_space_MousePos;
   
-  ImGui::EndChild(); 
+  ImGui::EndChild();
+
+  // Draw image display windows
+  for (auto& ui_node : global_node_editor->node_pool) {
+    if (ui_node.draw_type == CANVAS) {
+      ImGui::Begin("Canvas");
+      //ImGui::Text("%f, %f", ui_node.texture_size.x, ui_node.texture_size.y);
+      ImGui::Image((void*)(intptr_t)ui_node.texture, ui_node.texture_size);
+      ImGui::End();
+    }
+  }
+  
 }
 
 bool create_gegl_link(NodeProperty *a, NodeProperty *b) {
@@ -573,8 +602,10 @@ void CreateLink(NodeProperty *a, NodeProperty *b) {
 
 Node *CreateNode(int node_id) {
   global_node_editor->node_pool.emplace_back(node_id);
-  global_node_editor->node_pool.back().pos = ImGui::GetCursorScreenPos();
+  // global_node_editor->node_pool.back().pos = ImGui::GetCursorScreenPos();
+  global_node_editor->node_pool.back().pos = {0, 0};
   global_node_editor->num_nodes += 1;
+  global_node_editor->node_pool.back().layer = global_node_editor->num_nodes;
   
   return &global_node_editor->node_pool.back();
 }
@@ -677,6 +708,7 @@ void EndNodeProperty(NodeProperty *property) {
 }
 
 void DrawGeglNode(Node &ui_node) {
+  
   GPNode::BeginNode(ui_node.id);
   ImGui::Text("layer: %d", ui_node.layer);
   if (ui_node.draw_type == CANVAS) {
@@ -736,13 +768,15 @@ void DrawGeglNode(Node &ui_node) {
 //   GPNode::EndNode();
 // }
 
-void CreateTexture(const void* data, int width, int height) {
-  global_node_editor->textures.resize(global_node_editor->textures.size() + 1);
-  ImTextureID& texture = global_node_editor->textures.back();
+ImTextureID CreateTexture(const void* data, int width, int height) {
+  // global_node_editor->textures.resize(global_node_editor->textures.size() + 1);
+  // ImTextureID& texture = global_node_editor->textures.back();
 
+  ImTextureID texture;
+  GLuint texture_id;
   // Upload texture to graphics system
-  glGenTextures(1, (GLuint*)&texture);
-  glBindTexture(GL_TEXTURE_2D, (GLuint)(intptr_t)texture);
+  glGenTextures(1, &texture_id);
+  glBindTexture(GL_TEXTURE_2D, texture_id);
   
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -753,6 +787,8 @@ void CreateTexture(const void* data, int width, int height) {
   // texture.Height = height;
 
   // return reinterpret_cast<ImTextureID>(static_cast<std::intptr_t>(texture.TextureID));
+  texture = (void *)(intptr_t)texture_id;
+  return texture;
 }
 
 void CreateCanvasNode() {
@@ -777,6 +813,16 @@ void CreateCanvasNode() {
   item_id_count += 1;
   property.id = item_id_count;
   property.hovered = false;
+
+  // temp texture testing
+  int image_width = 0;
+  int image_height = 0;
+  unsigned char* image_data = stbi_load("./test.jpg", &image_width, &image_height, NULL, 4);
+  if (image_data == NULL)
+    printf("could not load image\n");
+
+  ui_node->texture = CreateTexture(image_data, image_width, image_height);
+  ui_node->texture_size = ImVec2(image_width, image_height);
 
   global_node_editor->pin_pool.emplace_back(property);
   ui_node->gegl_input_pads.emplace_back(property.id);
