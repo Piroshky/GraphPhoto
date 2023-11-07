@@ -44,10 +44,12 @@ inline int node_background(Node n) {
 
 int item_id_count;
 
-int CreateGeglNode(GeglOperationClass *klass);
+//int CreateGeglNode(GeglOperationClass *klass);
+int CreateGeglNode(const char *operation);
 void CreateLink(NodeProperty *a, NodeProperty *b);
 void DrawGeglNode(Node &ui_node);
-void CreateCanvasNode();
+int CreateCanvasNode();
+ImTextureID CreateTexture(const void* data, int width, int height);
   
 NodeEditor *global_node_editor = NULL;
 
@@ -69,7 +71,36 @@ void InitializeNodeEditor() {
   global_node_editor->mouse_in_canvas = false;
   global_node_editor->num_nodes = 0;
 
-  CreateCanvasNode();
+  int id = CreateGeglNode("gegl:load"); 
+  int canvas_id = CreateCanvasNode();
+
+  Node *canvas = FindNode(canvas_id);
+  Node *load = FindNode(id);
+  
+  gegl_node_set(load->gegl_node, "path", "./test.jpg", NULL);
+
+  NodeProperty *load_out = FindProperty(load->gegl_output_pads[0]);
+  NodeProperty *canvas_in = FindProperty(canvas->gegl_input_pads[0]);
+  CreateLink(load_out, canvas_in);  
+  
+  gegl_node_process(canvas->gegl_node);
+  int h = gegl_buffer_get_height(canvas->gegl_buffer);
+  int w = gegl_buffer_get_width(canvas->gegl_buffer);
+  canvas->texture_size = ImVec2(w, h);
+  int pixels = gegl_buffer_get_pixel_count(canvas->gegl_buffer);
+  void *image_data = malloc(pixels * 4 * sizeof(char));
+  gegl_buffer_get(canvas->gegl_buffer,
+		  NULL,
+		  1.0,
+		  babl_format ("R'G'B'A u8"),
+		  image_data, GEGL_AUTO_ROWSTRIDE,
+		  GEGL_ABYSS_NONE);
+
+  canvas->texture = CreateTexture(image_data, w, h);
+  canvas->texture_size = ImVec2(w, h);
+
+  
+
   
 }
 
@@ -98,7 +129,7 @@ void BeginNodeEditor() {
       if (ImGui::BeginMenu(c.first.c_str())) {
 	for (auto op : c.second.operations) {
 	  if (ImGui::MenuItem(op.klass->name, NULL, false, true)) {
-	    CreateGeglNode(op.klass);
+	    CreateGeglNode((char*)op.klass->name);
 	  }	  
 	}
 	ImGui::EndMenu();
@@ -420,20 +451,27 @@ void EndNodeEditor() {
     
     for (int p : node.input_properties) {
       NodeProperty *property = FindProperty(p);
-      ImU32 color;
+      ImU32 outline_color;
       if (property->hovered) {
-	color = IM_COL32(0, 255, 0, 255);
+	outline_color = IM_COL32(0, 255, 0, 255);
       } else {
-	color = IM_COL32(200, 200, 200, 255);
-      }      
+	outline_color = IM_COL32(200, 200, 200, 255);
+      }
+
+      ImU32 interior_color;
+      if (property->links > 0) {
+	interior_color = IM_COL32(0, 0, 255, 255);
+      } else {
+	interior_color = IM_COL32(50, 50, 50, 255);
+      }
       
       draw_list->AddCircleFilled(property->pin_pos,
 				 pin_radius,
-				 IM_COL32(50, 50, 50, 255),
+				 interior_color,
 				 16);
       draw_list->AddCircle(property->pin_pos,
 			   pin_radius,
-			   color,
+			   outline_color,
 			   16,
 			   global_node_editor->Style_NodeOutlineWidth);      
     }
@@ -445,11 +483,18 @@ void EndNodeEditor() {
 	color = IM_COL32(0, 255, 0, 255);
       } else {
 	color = IM_COL32(200, 200, 200, 255);
-      }      
+      }
+
+      ImU32 interior_color;
+      if (property->links > 0) {
+	interior_color = IM_COL32(0, 0, 255, 255);
+      } else {
+	interior_color = IM_COL32(50, 50, 50, 255);
+      }
 
       draw_list->AddRectFilled(property->pin_pos - pin_radius,
 			       property->pin_pos + pin_radius,
-			       IM_COL32(50, 50, 50, 255), 0, 0);
+			       interior_color, 0, 0);
 
       draw_list->AddRect(property->pin_pos - pin_radius,
 			 property->pin_pos + pin_radius,
@@ -465,11 +510,17 @@ void EndNodeEditor() {
 	color = IM_COL32(0, 255, 0, 255);
       } else {
 	color = IM_COL32(200, 200, 200, 255);
-      }      
+      }
+      ImU32 interior_color;
+      if (property->links > 0) {
+	interior_color = IM_COL32(0, 0, 255, 255);
+      } else {
+	interior_color = IM_COL32(50, 50, 50, 255);
+      }
 
       draw_list->AddRectFilled(property->pin_pos - pin_radius,
 			       property->pin_pos + pin_radius,
-			       IM_COL32(50, 50, 50, 255), 0, 0);
+			       interior_color, 0, 0);
 
       draw_list->AddRect(property->pin_pos - pin_radius,
 			 property->pin_pos + pin_radius,
@@ -598,6 +649,8 @@ void CreateLink(NodeProperty *a, NodeProperty *b) {
   
   global_node_editor->link_pool.emplace_back(a->id, b->id);
   global_node_editor->num_links += 1;
+  a->links += 1;
+  b->links += 1;
 }
 
 Node *CreateNode(int node_id) {
@@ -714,7 +767,8 @@ void DrawGeglNode(Node &ui_node) {
   if (ui_node.draw_type == CANVAS) {
     ImGui::Text("Canvas");
   } else {
-    ImGui::Text(ui_node.gegl_operation_klass->name);
+    // ImGui::Text(ui_node.gegl_operation_klass->name);
+    ImGui::Text(GEGL_OPERATION_GET_CLASS(gegl_node_get_gegl_operation(ui_node.gegl_node))->name);
   }
   ImGui::Separator();
   
@@ -791,7 +845,7 @@ ImTextureID CreateTexture(const void* data, int width, int height) {
   return texture;
 }
 
-void CreateCanvasNode() {
+int CreateCanvasNode() {
 
   item_id_count += 1;
   int node_id = item_id_count;
@@ -813,31 +867,38 @@ void CreateCanvasNode() {
   item_id_count += 1;
   property.id = item_id_count;
   property.hovered = false;
+  property.links = 0;
 
   // temp texture testing
   int image_width = 0;
   int image_height = 0;
-  unsigned char* image_data = stbi_load("./test.jpg", &image_width, &image_height, NULL, 4);
-  if (image_data == NULL)
-    printf("could not load image\n");
+  // unsigned char* image_data = stbi_load("./test.jpg", &image_width, &image_height, NULL, 4);
+  // if (image_data == NULL)
+  //   printf("could not load image\n");
 
-  ui_node->texture = CreateTexture(image_data, image_width, image_height);
-  ui_node->texture_size = ImVec2(image_width, image_height);
+  // ui_node->texture = CreateTexture(image_data, image_width, image_height);
+  // ui_node->texture_size = ImVec2(image_width, image_height);
 
   global_node_editor->pin_pool.emplace_back(property);
   ui_node->gegl_input_pads.emplace_back(property.id);
+
+  return node_id;
 }
 
-int CreateGeglNode(GeglOperationClass *klass) {
-  GeglNode *gegl_node = gegl_node_new_child(global_node_editor->graph, "operation", klass->name, NULL);
+// int CreateGeglNode(char *operation) {
+
+// }
+
+int CreateGeglNode(const char *operation) {
+  GeglNode *gegl_node = gegl_node_new_child(global_node_editor->graph, "operation", operation, NULL);
   item_id_count += 1;
   int node_id = item_id_count;
   Node *ui_node = CreateNode(node_id);
   ui_node->draw_type = GEGL;
   ui_node->gegl_node = gegl_node;
-  ui_node->gegl_operation_klass = klass;
+//  ui_node->gegl_operation_klass = klass;
   
-  printf("Operation name: %s\n", klass->name);
+  printf("Operation name: %s\n", operation);
   
   ui_node->pos = global_node_editor->mouse_pos_in_canvas;
       
@@ -854,6 +915,7 @@ int CreateGeglNode(GeglOperationClass *klass) {
     item_id_count += 1;
     property.id = item_id_count;
     property.hovered = false;
+    property.links = 0;
 
     global_node_editor->pin_pool.emplace_back(property);
     ui_node->gegl_input_pads.emplace_back(property.id);
@@ -875,6 +937,7 @@ int CreateGeglNode(GeglOperationClass *klass) {
     item_id_count += 1;
     property.id = item_id_count;
     property.hovered = false;
+    property.links = 0;
 
     global_node_editor->pin_pool.emplace_back(property);
     ui_node->gegl_output_pads.emplace_back(property.id);
@@ -886,6 +949,7 @@ int CreateGeglNode(GeglOperationClass *klass) {
   // Add input properties
   printf("Properties:\n");
   unsigned int n_properties;
+  GeglOperationClass *klass = GEGL_OPERATION_GET_CLASS(gegl_node_get_gegl_operation(ui_node->gegl_node));
   GParamSpec **properties = g_object_class_list_properties((GObjectClass*) klass, &n_properties);
   for (unsigned int j = 0; j < n_properties; ++j) {
     NodeProperty property;
@@ -896,6 +960,7 @@ int CreateGeglNode(GeglOperationClass *klass) {
     item_id_count += 1;
     property.id = item_id_count;
     property.hovered = false;
+    property.links = 0;
 
     g_print("\t\t %d  %s\n",property.id, g_param_spec_get_name(properties[j]));
 
@@ -920,7 +985,7 @@ int CreateGeglNode(GeglOperationClass *klass) {
   global_node_editor->selected_nodes.clear();
   global_node_editor->selected_nodes.push_back(ui_node->id);
   
-  return 0;
+  return node_id;
 }
 
 }

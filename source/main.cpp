@@ -158,28 +158,28 @@ int main(int, char**)
 	  
 	    GPNode::BeginNodeEditor();
 	  
-	    GPNode::BeginNode(1);
-	    ImGui::Text("This is my test text");
-	    ImGui::Text("some more text");
+	    // GPNode::BeginNode(1);
+	    // ImGui::Text("This is my test text");
+	    // ImGui::Text("some more text");
 
 	    
-	    // GPNode::BeginNodeInput(4);
-	    ImGui::DragFloat("my float", &d, 0.01f);
-	    // GPNode::EndNodeInput();
+	    // // GPNode::BeginNodeInput(4);
+	    // ImGui::DragFloat("my float", &d, 0.01f);
+	    // // GPNode::EndNodeInput();
 	    
-	    static char intext[100];
-	    ImGui::InputText("Text Input", intext, IM_ARRAYSIZE(intext));	
-	    GPNode::EndNode();
+	    // static char intext[100];
+	    // ImGui::InputText("Text Input", intext, IM_ARRAYSIZE(intext));	
+	    // GPNode::EndNode();
 
-	    GPNode::BeginNode(2);
-	    ImGui::Text("This is my second node");
-	    ImGui::Text("some more text");
-	    GPNode::EndNode();
+	    // GPNode::BeginNode(2);
+	    // ImGui::Text("This is my second node");
+	    // ImGui::Text("some more text");
+	    // GPNode::EndNode();
 
-	    GPNode::BeginNode(3);
-	    ImGui::Text("This is my third node");
-	    ImGui::Text("some more text");
-	    GPNode::EndNode();	    
+	    // GPNode::BeginNode(3);
+	    // ImGui::Text("This is my third node");
+	    // ImGui::Text("some more text");
+	    // GPNode::EndNode();	    
 	  
 	    GPNode::EndNodeEditor();
 	  

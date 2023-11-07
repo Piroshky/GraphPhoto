@@ -20,6 +20,7 @@ struct NodeProperty {
   ImRect  rect;
   ImVec2  pin_pos;
   bool    hovered;
+  bool    links;
 };
 
 struct Node {
@@ -120,7 +121,7 @@ void EndNode();
 void BeginNodeInput(int id);
 void EndNodeInput();
 
-void CreateCanvasNode();
+int CreateCanvasNode();
 
 NodeProperty *FindProperty(int property_id);
 Node *FindNode(int node_id);
