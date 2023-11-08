@@ -71,34 +71,49 @@ void InitializeNodeEditor() {
   global_node_editor->mouse_in_canvas = false;
   global_node_editor->num_nodes = 0;
 
-  int id = CreateGeglNode("gegl:load"); 
   int canvas_id = CreateCanvasNode();
-
+  // int load_id   = CreateGeglNode("gegl:load");
+  // int edge_id   = CreateGeglNode("gegl:edge");
+  
   Node *canvas = FindNode(canvas_id);
-  Node *load = FindNode(id);
   
-  gegl_node_set(load->gegl_node, "path", "./test.jpg", NULL);
 
-  NodeProperty *load_out = FindProperty(load->gegl_output_pads[0]);
-  NodeProperty *canvas_in = FindProperty(canvas->gegl_input_pads[0]);
-  CreateLink(load_out, canvas_in);  
+  GeglNode *load    = gegl_node_new_child (global_node_editor->graph,
+					   "operation", "gegl:load",
+					   NULL);  
+  gegl_node_set(load, "path", "./test.jpg", NULL);
+  gegl_node_set(canvas->gegl_node, "buffer", &(ui_node->gegl_buffer), NULL);
+
+  // GeglNode *edge    = gegl_node_new_child (global_node_editor->graph,
+  // 					   "operation", "gegl:edge",
+  // 					   NULL);  
+
+  gegl_node_connect_to(load, "output", canvas->gegl_node, "input");
+  // gegl_node_connect_to(edge, "output", canvas->gegl_node, "input");
   
-  gegl_node_process(canvas->gegl_node);
-  int h = gegl_buffer_get_height(canvas->gegl_buffer);
-  int w = gegl_buffer_get_width(canvas->gegl_buffer);
-  canvas->texture_size = ImVec2(w, h);
-  int pixels = gegl_buffer_get_pixel_count(canvas->gegl_buffer);
-  void *image_data = malloc(pixels * 4 * sizeof(char));
-  gegl_buffer_get(canvas->gegl_buffer,
-		  NULL,
-		  1.0,
-		  babl_format ("R'G'B'A u8"),
-		  image_data, GEGL_AUTO_ROWSTRIDE,
-		  GEGL_ABYSS_NONE);
+  // GeglNode *prod = (gegl_node_get_producer(canvas->gegl_node, "input", NULL));
+  // printf("prod %s\n", GEGL_OPERATION_GET_CLASS(gegl_node_get_gegl_operation(prod))->name);
 
-  canvas->texture = CreateTexture(image_data, w, h);
-  canvas->texture_size = ImVec2(w, h);
+  // prod = (gegl_node_get_producer(prod, "input", NULL));
+  // printf("prod %s\n", GEGL_OPERATION_GET_CLASS(gegl_node_get_gegl_operation(prod))->name);
+  
+  if (gegl_node_get_producer(canvas->gegl_node, "input", NULL)) {  
+    gegl_node_process(canvas->gegl_node);
+    int h = gegl_buffer_get_height(canvas->gegl_buffer);
+    int w = gegl_buffer_get_width(canvas->gegl_buffer);
+    canvas->texture_size = ImVec2(w, h);
+    int pixels = gegl_buffer_get_pixel_count(canvas->gegl_buffer);
+    void *image_data = malloc(pixels * 4 * sizeof(char));
+    gegl_buffer_get(canvas->gegl_buffer,
+		    NULL,
+		    1.0,
+		    babl_format ("R'G'B'A u8"),
+		    image_data, GEGL_AUTO_ROWSTRIDE,
+		    GEGL_ABYSS_NONE);
 
+    canvas->texture = CreateTexture(image_data, w, h);
+    canvas->texture_size = ImVec2(w, h);
+  }
   
 
   
@@ -632,17 +647,27 @@ void EndNodeEditor() {
 bool create_gegl_link(NodeProperty *a, NodeProperty *b) {
   Node *start = FindNode(a->node_id);
   Node *end   = FindNode(b->node_id);
-  return gegl_node_connect(start->gegl_node, a->label,
+
+  printf("trying to create gegl link between %s (%s) and %s (%s)\n",
+	 GEGL_OPERATION_GET_CLASS(gegl_node_get_gegl_operation(start->gegl_node))->name, a->label,
+	 GEGL_OPERATION_GET_CLASS(gegl_node_get_gegl_operation(end->gegl_node))->name, b->label);
+  
+  bool ret = gegl_node_connect(start->gegl_node, a->label,
 			      end->gegl_node,   b->label);
+
+  printf("ret %s\n", ret ? "succeed" : "fail");
+  return ret;
 }
 
 void CreateLink(NodeProperty *a, NodeProperty *b) {  
   if (a->direction == INPUT) {
     std::swap(a, b);
+    printf("swapping\n");
   }  
 
   if (g_type_is_a(a->gtype, g_type_from_name("GeglPad"))) {
     if (!create_gegl_link(a, b)) {
+      printf("failed to create gegl link\n");
       return;
     }
   }
@@ -868,7 +893,9 @@ int CreateCanvasNode() {
   property.id = item_id_count;
   property.hovered = false;
   property.links = 0;
-
+  global_node_editor->pin_pool.emplace_back(property);
+  ui_node->gegl_input_pads.emplace_back(property.id);
+  
   // temp texture testing
   int image_width = 0;
   int image_height = 0;
@@ -878,9 +905,6 @@ int CreateCanvasNode() {
 
   // ui_node->texture = CreateTexture(image_data, image_width, image_height);
   // ui_node->texture_size = ImVec2(image_width, image_height);
-
-  global_node_editor->pin_pool.emplace_back(property);
-  ui_node->gegl_input_pads.emplace_back(property.id);
 
   return node_id;
 }
