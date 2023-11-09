@@ -1,3 +1,5 @@
+#pragma once
+
 #include <vector>
 #include <cstdint>
 
@@ -8,6 +10,8 @@
 // The trade off is that bucket locators let you quickly free objects,
 // but requires that Buckets are never freed. Alternatively you can
 // free by pointer, which takes O(number of buckets) time.
+//
+// Currently the fill_mask uses full bools instead of a bitfield.
 
 struct BucketLocator {
   int bucket_index;
@@ -35,13 +39,13 @@ struct BucketArray {
   int unfull_bucket_count = 0;
   std::vector<Bucket<T, items_per_bucket> *> unfull_buckets;
 
-  iterator<T, items_per_bucket> begin() {return iterator{this};}
-  iterator<T, items_per_bucket> end()   {return iterator{this, count};}
+  iterator<T, items_per_bucket> begin() {return iterator<T, items_per_bucket>{this};}
+  iterator<T, items_per_bucket> end()   {return iterator<T, items_per_bucket>{this, count};}
 
   // public
+  int            size() {return count;} // the number of elements
   BucketLocator  add(T *obj);
   T             *request(BucketLocator *l = NULL);   
-  
   T             *get(int index); // takes O(number of buckets) time
   void           remove(T *obj); // takes O(number of buckets) time
   

@@ -5,6 +5,7 @@
 #include <gegl-types.h>
 #include <vector>
 #include <imgui_impl_opengl3.h>
+#include "BucketArray.cpp"
 
 namespace GPNode {
 
@@ -24,12 +25,12 @@ struct NodeProperty {
 };
 
 struct Node {
-  int     id;
+  int     id = -1;
   ImVec2  pos;
   ImRect  size;
-  int     layer;
-  bool    mouse_in_node;
-  bool    hovered;
+  int     layer = -1;
+  bool    mouse_in_node = false;
+  bool    hovered = false;
 
   NODE_DRAW_TYPE draw_type;
   GeglOperationClass *gegl_operation_klass;
@@ -41,7 +42,9 @@ struct Node {
   std::vector<int> gegl_input_pads;
   std::vector<int> gegl_output_pads;
   std::vector<int> input_properties;
-    
+
+  Node() {}
+  
   Node(int id)
     : id(id),
       pos({0,0}),
@@ -57,6 +60,7 @@ struct Link {
   int start_id;
   int end_id;
 
+  Link() {}
   Link(int start_id, int end_id) :
     start_id(start_id),
     end_id(end_id)
@@ -74,10 +78,11 @@ enum NodeEditorMouseState {
 const char *mouse_state_string(NodeEditorMouseState s);
 
 struct NodeEditor {
-  std::vector<Node> node_pool;
-  std::vector<NodeProperty> pin_pool;
-  std::vector<Link> link_pool;
-  std::vector<ImTextureID> textures;
+  // 40 chosen for very good computer science reasons.  ...  So good they're secret.
+  BucketArray<Node, 40>         node_pool;
+  BucketArray<NodeProperty, 40> pin_pool;
+  BucketArray<Link, 40>         link_pool;
+  BucketArray<ImTextureID, 40>  textures;
   
   Node   *current_node;
   int     num_nodes;

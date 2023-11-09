@@ -82,7 +82,7 @@ void InitializeNodeEditor() {
 					   "operation", "gegl:load",
 					   NULL);  
   gegl_node_set(load, "path", "./test.jpg", NULL);
-  gegl_node_set(canvas->gegl_node, "buffer", &(ui_node->gegl_buffer), NULL);
+  gegl_node_set(canvas->gegl_node, "buffer", &(canvas->gegl_buffer), NULL);
 
   // GeglNode *edge    = gegl_node_new_child (global_node_editor->graph,
   // 					   "operation", "gegl:edge",
@@ -671,21 +671,22 @@ void CreateLink(NodeProperty *a, NodeProperty *b) {
       return;
     }
   }
-  
-  global_node_editor->link_pool.emplace_back(a->id, b->id);
+
+  Link *link = global_node_editor->link_pool.request();
+  *link = {a->id, b->id};
   global_node_editor->num_links += 1;
   a->links += 1;
   b->links += 1;
 }
 
 Node *CreateNode(int node_id) {
-  global_node_editor->node_pool.emplace_back(node_id);
-  // global_node_editor->node_pool.back().pos = ImGui::GetCursorScreenPos();
-  global_node_editor->node_pool.back().pos = {0, 0};
+  Node *new_node = global_node_editor->node_pool.request();
+  new_node->id = node_id;
+  new_node->pos = {0,0};
   global_node_editor->num_nodes += 1;
-  global_node_editor->node_pool.back().layer = global_node_editor->num_nodes;
-  
-  return &global_node_editor->node_pool.back();
+  new_node->layer = global_node_editor->num_nodes;
+
+  return new_node;
 }
 
 //// get node from node list, or create node with given id
@@ -884,17 +885,17 @@ int CreateCanvasNode() {
   ui_node->gegl_node = sink;
   ui_node->draw_type = CANVAS;
 
-  NodeProperty property;
-  property.direction = INPUT;
-  property.node_id = node_id;
-  property.label = strdup("input");
-  property.gtype = g_type_from_name("GeglPad");
+  NodeProperty *property = global_node_editor->pin_pool.request();
+  property->direction = INPUT;
+  property->node_id = node_id;
+  property->label = strdup("input");
+  property->gtype = g_type_from_name("GeglPad");
   item_id_count += 1;
-  property.id = item_id_count;
-  property.hovered = false;
-  property.links = 0;
-  global_node_editor->pin_pool.emplace_back(property);
-  ui_node->gegl_input_pads.emplace_back(property.id);
+  property->id = item_id_count;
+  property->hovered = false;
+  property->links = 0;
+
+  ui_node->gegl_input_pads.emplace_back(property->id);
   
   // temp texture testing
   int image_width = 0;
@@ -931,18 +932,17 @@ int CreateGeglNode(const char *operation) {
   gchar ** input_pads = gegl_node_list_input_pads(gegl_node);
   for (char **c = input_pads; c != NULL && *c != 0; ++c) {
 
-    NodeProperty property;
-    property.direction = INPUT;
-    property.node_id = node_id;
-    property.label = strdup(*c);
-    property.gtype = g_type_from_name("GeglPad");
+    NodeProperty *property = global_node_editor->pin_pool.request();
+    property->direction = INPUT;
+    property->node_id = node_id;
+    property->label = strdup(*c);
+    property->gtype = g_type_from_name("GeglPad");
     item_id_count += 1;
-    property.id = item_id_count;
-    property.hovered = false;
-    property.links = 0;
+    property->id = item_id_count;
+    property->hovered = false;
+    property->links = 0;
 
-    global_node_editor->pin_pool.emplace_back(property);
-    ui_node->gegl_input_pads.emplace_back(property.id);
+    ui_node->gegl_input_pads.emplace_back(property->id);
     
     g_print("\t\t%s\n", *c);
   }
@@ -953,18 +953,17 @@ int CreateGeglNode(const char *operation) {
   gchar ** output_pads = gegl_node_list_output_pads(gegl_node);
   for (char **c = output_pads; c != NULL && *c != 0; ++c) {
 
-    NodeProperty property;
-    property.direction = OUTPUT;
-    property.node_id = node_id;
-    property.label = strdup(*c);
-    property.gtype = g_type_from_name("GeglPad");
+    NodeProperty *property = global_node_editor->pin_pool.request();
+    property->direction = OUTPUT;
+    property->node_id = node_id;
+    property->label = strdup(*c);
+    property->gtype = g_type_from_name("GeglPad");
     item_id_count += 1;
-    property.id = item_id_count;
-    property.hovered = false;
-    property.links = 0;
+    property->id = item_id_count;
+    property->hovered = false;
+    property->links = 0;
 
-    global_node_editor->pin_pool.emplace_back(property);
-    ui_node->gegl_output_pads.emplace_back(property.id);
+    ui_node->gegl_output_pads.emplace_back(property->id);
     
     g_print("\t\t%s\n", *c);   
   }
@@ -976,17 +975,18 @@ int CreateGeglNode(const char *operation) {
   GeglOperationClass *klass = GEGL_OPERATION_GET_CLASS(gegl_node_get_gegl_operation(ui_node->gegl_node));
   GParamSpec **properties = g_object_class_list_properties((GObjectClass*) klass, &n_properties);
   for (unsigned int j = 0; j < n_properties; ++j) {
-    NodeProperty property;
-    property.direction = INPUT;
-    property.node_id = node_id;
-    property.label = strdup(g_param_spec_get_nick(properties[j]));
-    property.gtype = G_PARAM_SPEC_TYPE(properties[j]);
-    item_id_count += 1;
-    property.id = item_id_count;
-    property.hovered = false;
-    property.links = 0;
 
-    g_print("\t\t %d  %s\n",property.id, g_param_spec_get_name(properties[j]));
+    NodeProperty *property = global_node_editor->pin_pool.request();
+    property->direction = INPUT;
+    property->node_id = node_id;
+    property->label = strdup(g_param_spec_get_nick(properties[j]));
+    property->gtype = G_PARAM_SPEC_TYPE(properties[j]);
+    item_id_count += 1;
+    property->id = item_id_count;
+    property->hovered = false;
+    property->links = 0;
+
+    g_print("\t\t %d  %s\n",property->id, g_param_spec_get_name(properties[j]));
 
     GType parameter_type G_PARAM_SPEC_TYPE(properties[j]);
     if (g_type_is_a(parameter_type, G_TYPE_PARAM_ENUM)) {
@@ -1000,8 +1000,7 @@ int CreateGeglNode(const char *operation) {
       }
     }
 
-    global_node_editor->pin_pool.emplace_back(property);
-    ui_node->input_properties.emplace_back(property.id);
+    ui_node->input_properties.emplace_back(property->id);
   }
   g_free(properties); // todo is this right?
   
