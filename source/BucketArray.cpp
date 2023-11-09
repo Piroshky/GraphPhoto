@@ -1,6 +1,14 @@
 #include <vector>
 #include <cstdint>
 
+// An expandable container that doesn't reallocate objects.
+// Is made up of individually allocated "buckets" of objects.
+// Buckets are not freed when empty, but can be modified to do so.
+// If you do this you will need to not rework how BucketLocators work.
+// The trade off is that bucket locators let you quickly free objects,
+// but requires that Buckets are never freed. Alternatively you can
+// free by pointer, which takes O(number of buckets) time.
+
 struct BucketLocator {
   int bucket_index;
   int slot_index;
@@ -32,9 +40,11 @@ struct BucketArray {
 
   // public
   BucketLocator  add(T *obj);
-  T             *request();   // gives a pointer an unused bucket slot and initializes the memory with default constructor.
-  T             *get(int index);
-  void           remove(T *obj);
+  T             *request(BucketLocator *l = NULL);   
+  
+  T             *get(int index); // takes O(number of buckets) time
+  void           remove(T *obj); // takes O(number of buckets) time
+  
 
   // internal
   void add_bucket();
@@ -104,7 +114,7 @@ struct iterator {
 
 //// public BucketArray functions
 
-// add(T *obj)
+// BucketLocator add(T *obj)
 template<typename T, int items_per_bucket>
 BucketLocator BucketArray<T, items_per_bucket>::add(T *obj) {
   if (unfull_bucket_count == 0) {
@@ -134,9 +144,14 @@ BucketLocator BucketArray<T, items_per_bucket>::add(T *obj) {
   return BucketLocator{bucket->bucket_index, index};
 }
 
-// request();
+// request(BucketLocator *l = NULL);
+// Gives a pointer an unused bucket slot and initializes the slot with default constructor.
+// Will fill l with BucketLocator info, if given.
+//
+// p.s. C++ is bad and doesn't let you put the default parameter value in again if you already
+// declared the function? Why is everything so shoddy in C++?
 template<typename T, int items_per_bucket>
-T *BucketArray<T, items_per_bucket>::request() {
+T *BucketArray<T, items_per_bucket>::request(BucketLocator *l) {
   if (unfull_bucket_count == 0) {
     add_bucket();
   }
@@ -161,10 +176,16 @@ T *BucketArray<T, items_per_bucket>::request() {
     unfull_bucket_count -= 1;
   }
 
+  if (l) {
+    *l = BucketLocator{bucket->bucket_index, index};
+  }
+  
   return &(bucket->data[index]);
 }
 
-// get(int index);
+// T *get(int index);
+// Returns a pointer to the index-th element, or if that is out of range, NULL.
+// Runs O(number of buckets) time
 template<typename T, int items_per_bucket>
 T *BucketArray<T, items_per_bucket>::get(int index) {
   for (auto b : all_buckets) {
@@ -188,6 +209,8 @@ T *BucketArray<T, items_per_bucket>::get(int index) {
 }
 
 // remove(T *obj);
+// Frees the slot that obj points to. 
+// Runs O(number of buckets) time
 template<typename T, int items_per_bucket>
 void BucketArray<T, items_per_bucket>::remove(T *obj) {
   for (auto b : all_buckets) {
