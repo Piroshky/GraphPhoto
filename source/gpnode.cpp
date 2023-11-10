@@ -1,12 +1,15 @@
-#define IMGUI_DEFINE_MATH_OPERATORS
-
 #include <limits>
 #include <math.h>
 
-#include <GL/gl3w.h>    // This example is using gl3w to access OpenGL functions (because it is small). You may use glew/glad/glLoadGen/etc. whatever already works for you.
+#include <GL/gl3w.h>
 #include <GLFW/glfw3.h>
 
+#define IMGUI_DEFINE_MATH_OPERATORS
 #include "imgui_internal.h"
+// not included in the builtin imgui math operators for some reason
+static inline ImVec2 operator-(const ImVec2& lhs, const float rhs)              { return ImVec2(lhs.x - rhs, lhs.y - rhs); }
+static inline ImVec2 operator+(const ImVec2& lhs, const float rhs)              { return ImVec2(lhs.x + rhs, lhs.y + rhs); }
+
 #include "gpnode.h"
 #include "gegl_helper.h"
 
@@ -14,8 +17,6 @@
 extern "C" {
 #include "stb_image.h"
 }
-
-#define IMGUI_DEFINE_MATH_OPERATORS
 
 namespace GPNode {
 
@@ -749,7 +750,10 @@ void BeginNode(int node_id) {
   ImGui::SetCursorScreenPos(current_node->pos);
   ImGui::PushID(current_node->id);
 
+  //printf("\nstart\n");
   ImGui::BeginGroup();
+  // ImGuiWindow* window = ImGui::GetCurrentWindow();
+  // window->Pos = current_node->pos;
   ImGui::PushItemWidth(100);
 }
 
@@ -758,8 +762,8 @@ void EndNode() {
   ImGuiIO& io = ImGui::GetIO();
   ImGui::PopItemWidth();
   ImGui::EndGroup();
-  current_node->size          = ImRect(ImGui::GetItemRectMin()- global_node_editor->Style_NodeMargin,
-				       ImGui::GetItemRectMax()+ global_node_editor->Style_NodeMargin);
+  current_node->size = ImRect(ImGui::GetItemRectMin()- global_node_editor->Style_NodeMargin,
+			      ImGui::GetItemRectMax()+ global_node_editor->Style_NodeMargin);
   current_node->mouse_in_node = current_node->size.Contains(io.MousePos);
 
   global_node_editor->current_node = NULL;
@@ -768,10 +772,11 @@ void EndNode() {
 
 void BeginNodeProperty(NodeProperty *property) {
   ImGui::BeginGroup();
-  ImGui::PushID(property->id);  
+  ImGui::PushID(property->id);
 }
 
-void EndNodeProperty(NodeProperty *property) {
+// returns width, currently used to calculate indent for output pads for right-alignment
+float EndNodeProperty(NodeProperty *property, bool input_p) {
   ImGui::PopID();
   ImGui::EndGroup();
 
@@ -779,16 +784,39 @@ void EndNodeProperty(NodeProperty *property) {
   ImVec2 max = ImGui::GetItemRectMax();
   
   property->rect = ImRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
-    
-  ImVec2 pin_pos = {min.x - (global_node_editor->Style_NodeMargin) + (global_node_editor->Style_NodeOutlineWidth) / 2.0f,
-		    min.y + ((max.y - min.y) / 2)};
+
+  ImVec2 pin_pos;
+  if (input_p) {
+    pin_pos = {min.x - (global_node_editor->Style_NodeMargin) + (global_node_editor->Style_NodeOutlineWidth) / 2.0f,
+	       min.y + ((max.y - min.y) / 2)};
+  } else {
+    pin_pos = {max.x + (global_node_editor->Style_NodeMargin) + (global_node_editor->Style_NodeOutlineWidth) / 2.0f,
+      min.y + ((max.y - min.y) / 2)};
+  }   
 
   property->pin_pos = pin_pos;
+  return max.x - min.x;
 }
 
+float EndOutputProperty(NodeProperty *property) {
+  return EndNodeProperty(property, false);
+}
+
+float EndInputProperty(NodeProperty *property) {
+  return EndNodeProperty(property, true);
+}
+
+
+// To right-align the output pads we keep track of the max width and use that
+// to calculate an indent for the output label(s? GEGL only ever has one output per node).
 void DrawGeglNode(Node &ui_node) {
-  
+  float width = 0;
   GPNode::BeginNode(ui_node.id);
+
+  ImGuiWindow* window = ImGui::GetCurrentWindow();
+  // printf("window Pos.x: %f | window Size.x: %f\n", window->Pos.x, window->Size.x);
+  // printf(N"ode   pos: %f, %f\n\n", ui_node.pos.x, ui_node.pos.y);
+    
   ImGui::Text("layer: %d", ui_node.layer);
   if (ui_node.draw_type == CANVAS) {
     ImGui::Text("Canvas");
@@ -796,7 +824,7 @@ void DrawGeglNode(Node &ui_node) {
     // ImGui::Text(ui_node.gegl_operation_klass->name);
     ImGui::Text(GEGL_OPERATION_GET_CLASS(gegl_node_get_gegl_operation(ui_node.gegl_node))->name);
   }
-  ImGui::Separator();
+  // ImGui::Separator();
   
   ImGui::Text("Input Pads");
   for (int pad_id : ui_node.gegl_input_pads) {
@@ -804,8 +832,10 @@ void DrawGeglNode(Node &ui_node) {
 
     BeginNodeProperty(property);
     ImGui::Text(property->label);
-    EndNodeProperty(property);    
-    
+    float w = EndInputProperty(property);
+    if (w > width) {
+      width = w;
+    }
   }
   
   ImGui::Text("Input Properties");
@@ -826,16 +856,28 @@ void DrawGeglNode(Node &ui_node) {
       ImGui::Text("%s -- %s", g_type_name(property->gtype), property->label);      
     }
 
-    EndNodeProperty(property);
+    float w = EndInputProperty(property);
+    if (w > width) {
+      width = w;
+    }    
   }
 
-  ImGui::Text("Output Pads");
+  if (!ui_node.gegl_output_pads.empty()) {
+    ImGui::Spacing();
+    ImGui::Text("Output Pads");
+  }
+
   for (auto pad_id : ui_node.gegl_output_pads) {
     NodeProperty *property = FindProperty(pad_id);
 
+    
     BeginNodeProperty(property);
-    ImGui::Text(property->label);    
-    EndNodeProperty(property);
+    
+    float text_width = ImGui::CalcTextSize(property->label).x;
+    ImGui::Indent(width - text_width);    
+    ImGui::TextUnformatted(property->label);
+
+    EndOutputProperty(property);
   }
   
   GPNode::EndNode();
@@ -898,8 +940,8 @@ int CreateCanvasNode() {
   ui_node->gegl_input_pads.emplace_back(property->id);
   
   // temp texture testing
-  int image_width = 0;
-  int image_height = 0;
+  // int image_width = 0;
+  // int image_height = 0;
   // unsigned char* image_data = stbi_load("./test.jpg", &image_width, &image_height, NULL, 4);
   // if (image_data == NULL)
   //   printf("could not load image\n");
