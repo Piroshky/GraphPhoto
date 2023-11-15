@@ -45,6 +45,25 @@ inline int node_background(Node n) {
 
 int item_id_count;
 
+void clear_selected_nodes() {
+  for (auto node_id : global_node_editor->selected_nodes) {
+    Node *node = FindNode(node_id);
+    node->selected = false;
+  }
+  global_node_editor->selected_nodes.clear();
+}
+
+void select_node(int node_id) {
+  Node *node = FindNode(node_id);
+  node->selected = true;
+  global_node_editor->selected_nodes.push_back(node_id);
+}
+
+void select_node(Node *node) {
+  node->selected = true;
+  global_node_editor->selected_nodes.push_back(node->id);
+}
+
 //int CreateGeglNode(GeglOperationClass *klass);
 int CreateGeglNode(const char *operation);
 void CreateLink(NodeProperty *a, NodeProperty *b);
@@ -73,30 +92,26 @@ void InitializeNodeEditor() {
   global_node_editor->num_nodes = 0;
 
   int canvas_id = CreateCanvasNode();
-  // int load_id   = CreateGeglNode("gegl:load");
-  // int edge_id   = CreateGeglNode("gegl:edge");
-  
   Node *canvas = FindNode(canvas_id);
-  
-
-  GeglNode *load    = gegl_node_new_child (global_node_editor->graph,
-					   "operation", "gegl:load",
-					   NULL);  
-  gegl_node_set(load, "path", "./test.jpg", NULL);
   gegl_node_set(canvas->gegl_node, "buffer", &(canvas->gegl_buffer), NULL);
-
-  // GeglNode *edge    = gegl_node_new_child (global_node_editor->graph,
-  // 					   "operation", "gegl:edge",
-  // 					   NULL);  
-
-  gegl_node_connect_to(load, "output", canvas->gegl_node, "input");
-  // gegl_node_connect_to(edge, "output", canvas->gegl_node, "input");
   
-  // GeglNode *prod = (gegl_node_get_producer(canvas->gegl_node, "input", NULL));
-  // printf("prod %s\n", GEGL_OPERATION_GET_CLASS(gegl_node_get_gegl_operation(prod))->name);
+  int load_id   = CreateGeglNode("gegl:load");
+  Node *load = FindNode(load_id);
+  
+  int edge_id   = CreateGeglNode("gegl:edge");
+  Node *edge  = FindNode(edge_id);    
+  
+  gegl_node_set(load->gegl_node, "path", "./test.jpg", NULL);
 
-  // prod = (gegl_node_get_producer(prod, "input", NULL));
-  // printf("prod %s\n", GEGL_OPERATION_GET_CLASS(gegl_node_get_gegl_operation(prod))->name);
+
+  NodeProperty *load_out  = FindProperty(load->gegl_output_pads[0]);
+  NodeProperty *edge_in   = FindProperty(edge->gegl_input_pads[0]);
+  NodeProperty *edge_out  = FindProperty(edge->gegl_output_pads[0]);
+  NodeProperty *canvas_in = FindProperty(canvas->gegl_input_pads[0]);
+  
+  CreateLink(load_out, edge_in);
+  CreateLink(edge_out, canvas_in);
+
   
   if (gegl_node_get_producer(canvas->gegl_node, "input", NULL)) {  
     gegl_node_process(canvas->gegl_node);
@@ -214,8 +229,8 @@ void BeginNodeEditor() {
   // layer numbering starts at 1, channel zero used for canvas background
   //                     
   //                    (one node)
-  //           canvas    layer 1   layer 2   ...   layer n    top layer
-  // channels    0         1  2     3  4          2n-1  2n    top channel
+  //           canvas    layer 1   layer 2   ...   layer n     top layer
+  // channels    0         1  2     3  4          2n-1   2n   top channel
   //                       ┃  ┃   
   //            background━┛  ┗━foreground
   
@@ -304,15 +319,28 @@ void BeginNodeEditor() {
       case NONE: {
 	if (hovered_pin_id != -1) {
 	  // clicking a pin
+
+	  // clicking a linked input pin
+	  NodeProperty *property = FindProperty(hovered_pin_id);
+	  if (property->direction == INPUT && property->links) {
+	    Link *link = FindLinkByInput(property->id);
+	    global_node_editor->active_pin = link->start_id;
+	    DestroyLink(link);
+	    
+	  } else {
+	    global_node_editor->active_pin  = hovered_pin_id;	    
+	  }
+	  
+	  // start new link
 	  global_node_editor->mouse_state = CREATE_LINK;
 	  global_node_editor->active_node = -1;
-	  global_node_editor->active_pin  = hovered_pin_id;
+	  
 	  
 	} else if (hovered_node_id != -1) {
 	  // clicking a node selects it
 	  if (!NodeSelected(hovered_node_id)) {
-	    global_node_editor->selected_nodes.clear();
-	    global_node_editor->selected_nodes.push_back(hovered_node_id);
+	    clear_selected_nodes();
+	    select_node(hovered_node_id);
 	  }
 
 	  // moves it to the top
@@ -331,7 +359,7 @@ void BeginNodeEditor() {
 	  global_node_editor->mouse_state = DRAG_SELECTION;
 	  global_node_editor->drag_start = io.MousePos;
 
-	  global_node_editor->selected_nodes.clear();;
+	  clear_selected_nodes();
 	}
 	break;
       }
@@ -592,10 +620,11 @@ void EndNodeEditor() {
     ImRect selection_box = ImRect(UL, LR);
 
     // add nodes in selection box to selected_nodes
-    global_node_editor->selected_nodes.clear();
+    clear_selected_nodes();
     for (auto node : global_node_editor->node_pool) {
       if (node.size.Overlaps(selection_box)) {
-	global_node_editor->selected_nodes.push_back(node.id);
+	node.selected = true;
+	select_node(&node);
       }
     }
     
@@ -636,6 +665,27 @@ void EndNodeEditor() {
   // Draw image display windows
   for (auto& ui_node : global_node_editor->node_pool) {
     if (ui_node.draw_type == CANVAS) {
+
+      if (gegl_node_get_producer(ui_node.gegl_node, "input", NULL)) {  
+	gegl_node_process(ui_node.gegl_node);
+	int h = gegl_buffer_get_height(ui_node.gegl_buffer);
+	int w = gegl_buffer_get_width(ui_node.gegl_buffer);
+	ui_node.texture_size = ImVec2(w, h);
+	int pixels = gegl_buffer_get_pixel_count(ui_node.gegl_buffer);
+	
+	void *image_data = malloc(pixels * 4 * sizeof(char));
+	gegl_buffer_get(ui_node.gegl_buffer,
+			NULL,
+			1.0,
+			babl_format ("R'G'B'A u8"),
+			image_data, GEGL_AUTO_ROWSTRIDE,
+			GEGL_ABYSS_NONE);
+
+	ui_node.texture = CreateTexture(image_data, w, h);
+	ui_node.texture_size = ImVec2(w, h);
+      }
+
+      
       ImGui::Begin("Canvas");
       //ImGui::Text("%f, %f", ui_node.texture_size.x, ui_node.texture_size.y);
       ImGui::Image((void*)(intptr_t)ui_node.texture, ui_node.texture_size);
@@ -645,6 +695,42 @@ void EndNodeEditor() {
   
 }
 
+void PropagateUpdate(Node *node) {
+  if (node->draw_type == GEGL) {
+    node->update = true;
+    return;
+  }
+  for (int property_id : node->gegl_output_pads) {
+    // TODO this all seems a bit crazy...
+    NodeProperty *np = FindProperty(property_id);
+    Link *link = FindLinkByOutput(np->id);
+    NodeProperty *n = FindProperty(link->end_id);
+    Node *next = FindNode(n->node_id);
+    PropagateUpdate(next);
+  }
+}
+
+void destroy_gegl_link(Link *link) {
+  NodeProperty *end_pin   = FindProperty(link->end_id);
+  NodeProperty *start_pin = FindProperty(link->start_id);
+  Node *end_node = FindNode(end_pin->node_id);
+
+  gegl_node_disconnect(end_node->gegl_node, end_pin->label);
+}
+
+void DestroyLink(Link *link) {
+  NodeProperty *output = FindProperty(link->start_id);
+  NodeProperty *input = FindProperty(link->end_id);
+  output->links -= 1;
+  input->links  -= 1;
+
+  if (g_type_is_a(input->gtype, g_type_from_name("GeglPad"))) {
+    destroy_gegl_link(link);
+  }
+
+  global_node_editor->link_pool.remove(link);
+}
+
 bool create_gegl_link(NodeProperty *a, NodeProperty *b) {
   Node *start = FindNode(a->node_id);
   Node *end   = FindNode(b->node_id);
@@ -652,19 +738,33 @@ bool create_gegl_link(NodeProperty *a, NodeProperty *b) {
   printf("trying to create gegl link between %s (%s) and %s (%s)\n",
 	 GEGL_OPERATION_GET_CLASS(gegl_node_get_gegl_operation(start->gegl_node))->name, a->label,
 	 GEGL_OPERATION_GET_CLASS(gegl_node_get_gegl_operation(end->gegl_node))->name, b->label);
+                 
+  GeglNode *prod = gegl_node_get_producer(end->gegl_node, b->label, NULL);
+  if (prod) {
+    printf("prod name %s\n", GEGL_OPERATION_GET_CLASS(gegl_node_get_gegl_operation(prod))->name);
+  }
   
   bool ret = gegl_node_connect(start->gegl_node, a->label,
 			      end->gegl_node,   b->label);
 
+  prod = gegl_node_get_producer(end->gegl_node, b->label, NULL);
+  if (prod) {
+    printf("prod2 name %s\n", GEGL_OPERATION_GET_CLASS(gegl_node_get_gegl_operation(prod))->name);
+  }
+  if (ret) {
+    PropagateUpdate(FindNode(b->node_id));
+  }
+  
   printf("ret %s\n", ret ? "succeed" : "fail");
   return ret;
 }
 
-void CreateLink(NodeProperty *a, NodeProperty *b) {  
+void CreateLink(NodeProperty *a, NodeProperty *b) {
+  if (a->direction == b->direction) return;
   if (a->direction == INPUT) {
     std::swap(a, b);
     printf("swapping\n");
-  }  
+  }
 
   if (g_type_is_a(a->gtype, g_type_from_name("GeglPad"))) {
     if (!create_gegl_link(a, b)) {
@@ -700,6 +800,24 @@ Node *GetNode(int node_id) {
   return CreateNode(node_id);
 }
 
+Link *FindLinkByInput(int input_id) {
+  for (auto& link : global_node_editor->link_pool) {
+    if (link.end_id == input_id) {
+      return &link;
+    }
+  }
+  return NULL;
+}
+
+Link *FindLinkByOutput(int output_id) {
+  for (auto& link : global_node_editor->link_pool) {
+    if (link.start_id == output_id) {
+      return &link;
+    }
+  }
+  return NULL;
+}
+
 NodeProperty *FindProperty(int property_id) {
   for (auto& property : global_node_editor->pin_pool) {
     if (property.id == property_id) {
@@ -717,7 +835,6 @@ Node *FindNode(int node_id) {
   }
   return NULL;
 }
-
 
 bool NodeSelected(int node_id) {
   for (auto sn : global_node_editor->selected_nodes) {
@@ -1047,8 +1164,8 @@ int CreateGeglNode(const char *operation) {
   g_free(properties); // todo is this right?
   
   // select new node
-  global_node_editor->selected_nodes.clear();
-  global_node_editor->selected_nodes.push_back(ui_node->id);
+  clear_selected_nodes();
+  select_node(ui_node);
   
   return node_id;
 }

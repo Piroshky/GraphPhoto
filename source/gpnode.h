@@ -13,15 +13,15 @@ enum NODE_DRAW_TYPE {CUSTOM, GEGL, CANVAS};
 enum PROPERTY_DIRECTION {INPUT, OUTPUT};
 
 struct NodeProperty {
-  int     id;
-  int     node_id;
+  int     id = -1;
+  int     node_id = -1;
   char   *label;
   PROPERTY_DIRECTION direction;
   GType   gtype;
   ImRect  rect;
   ImVec2  pin_pos;
-  bool    hovered;
-  bool    links;
+  bool    hovered = false;
+  int     links = 0;
 };
 
 struct Node {
@@ -31,11 +31,13 @@ struct Node {
   int     layer = -1;
   bool    mouse_in_node = false;
   bool    hovered = false;
+  bool    selected = false;
 
   NODE_DRAW_TYPE draw_type;
   GeglOperationClass *gegl_operation_klass;
-  GeglNode *gegl_node;
+  GeglNode    *gegl_node;
   GeglBuffer  *gegl_buffer;
+  bool         update = false; 
   ImTextureID  texture;
   ImVec2       texture_size;
   
@@ -114,7 +116,7 @@ struct NodeEditor {
   int Style_NodeOutlineWidth = 2;
   int Style_PinRadius = 5;
     
-  GeglNode *graph;    
+  GeglNode *graph;
 };
   
 void InitializeNodeEditor();
@@ -128,6 +130,11 @@ void EndNodeInput();
 
 int CreateCanvasNode();
 
+void CreateLink(NodeProperty *a, NodeProperty *b);
+void DestroyLink(Link *link);
+
+Link *FindLinkByInput(int input_id);
+Link *FindLinkByOutput(int output_id);
 NodeProperty *FindProperty(int property_id);
 Node *FindNode(int node_id);
 Node *GetNode(int node_id);
