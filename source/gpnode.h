@@ -38,7 +38,7 @@ struct Node {
   GeglNode    *gegl_node;
   GeglBuffer  *gegl_buffer;
   bool         update = false; 
-  ImTextureID  texture;
+  ImTextureID  texture = 0;
   ImVec2       texture_size;
   
   std::vector<int> gegl_input_pads;

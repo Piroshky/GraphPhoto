@@ -256,9 +256,9 @@ void BucketArray<T, items_per_bucket>::debug() {
 	 "     items_per_bucket = %d\n"
 	 "                count = %d\n\n"
 	 "         bucket_count = %d\n"
-	 "     full_bucket size = %d\n\n"
+	 "     full_bucket size = %ld\n\n"
 	 "  unfull_bucket_count = %d\n"
-	 "   unfull_bucket size = %d\n",
+	 "   unfull_bucket size = %ld\n",
 	 items_per_bucket,
 	 count,
 	 bucket_count,

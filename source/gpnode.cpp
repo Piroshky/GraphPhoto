@@ -666,7 +666,13 @@ void EndNodeEditor() {
   for (auto& ui_node : global_node_editor->node_pool) {
     if (ui_node.draw_type == CANVAS) {
 
-      if (gegl_node_get_producer(ui_node.gegl_node, "input", NULL)) {  
+      if(ui_node.update && gegl_node_get_producer(ui_node.gegl_node, "input", NULL)) {
+	ui_node.update = false;
+	printf("here\n");
+	if(ui_node.texture != 0) {
+	  glDeleteTextures(1, (GLuint*)&ui_node.texture);
+	}
+	
 	gegl_node_process(ui_node.gegl_node);
 	int h = gegl_buffer_get_height(ui_node.gegl_buffer);
 	int w = gegl_buffer_get_width(ui_node.gegl_buffer);
@@ -696,7 +702,7 @@ void EndNodeEditor() {
 }
 
 void PropagateUpdate(Node *node) {
-  if (node->draw_type == GEGL) {
+  if (node->draw_type == CANVAS) {
     node->update = true;
     return;
   }
@@ -704,6 +710,9 @@ void PropagateUpdate(Node *node) {
     // TODO this all seems a bit crazy...
     NodeProperty *np = FindProperty(property_id);
     Link *link = FindLinkByOutput(np->id);
+    if (!link) {
+      continue;
+    }
     NodeProperty *n = FindProperty(link->end_id);
     Node *next = FindNode(n->node_id);
     PropagateUpdate(next);
@@ -712,7 +721,6 @@ void PropagateUpdate(Node *node) {
 
 void destroy_gegl_link(Link *link) {
   NodeProperty *end_pin   = FindProperty(link->end_id);
-  NodeProperty *start_pin = FindProperty(link->start_id);
   Node *end_node = FindNode(end_pin->node_id);
 
   gegl_node_disconnect(end_node->gegl_node, end_pin->label);
@@ -751,9 +759,6 @@ bool create_gegl_link(NodeProperty *a, NodeProperty *b) {
   if (prod) {
     printf("prod2 name %s\n", GEGL_OPERATION_GET_CLASS(gegl_node_get_gegl_operation(prod))->name);
   }
-  if (ret) {
-    PropagateUpdate(FindNode(b->node_id));
-  }
   
   printf("ret %s\n", ret ? "succeed" : "fail");
   return ret;
@@ -764,6 +769,10 @@ void CreateLink(NodeProperty *a, NodeProperty *b) {
   if (a->direction == INPUT) {
     std::swap(a, b);
     printf("swapping\n");
+  }
+
+  if (b->links > 0) {
+    DestroyLink(FindLinkByInput(b->id));
   }
 
   if (g_type_is_a(a->gtype, g_type_from_name("GeglPad"))) {
@@ -778,6 +787,8 @@ void CreateLink(NodeProperty *a, NodeProperty *b) {
   global_node_editor->num_links += 1;
   a->links += 1;
   b->links += 1;
+
+  PropagateUpdate(FindNode(b->node_id));
 }
 
 Node *CreateNode(int node_id) {
@@ -810,7 +821,10 @@ Link *FindLinkByInput(int input_id) {
 }
 
 Link *FindLinkByOutput(int output_id) {
+  printf("output_id %d\n", output_id);
+  global_node_editor->link_pool.debug();
   for (auto& link : global_node_editor->link_pool) {
+    printf("link {%d, %d}\n", link.start_id, link.end_id);
     if (link.start_id == output_id) {
       return &link;
     }
@@ -867,10 +881,8 @@ void BeginNode(int node_id) {
   ImGui::SetCursorScreenPos(current_node->pos);
   ImGui::PushID(current_node->id);
 
-  //printf("\nstart\n");
+
   ImGui::BeginGroup();
-  // ImGuiWindow* window = ImGui::GetCurrentWindow();
-  // window->Pos = current_node->pos;
   ImGui::PushItemWidth(100);
 }
 
@@ -929,10 +941,6 @@ float EndInputProperty(NodeProperty *property) {
 void DrawGeglNode(Node &ui_node) {
   float width = 0;
   GPNode::BeginNode(ui_node.id);
-
-  ImGuiWindow* window = ImGui::GetCurrentWindow();
-  // printf("window Pos.x: %f | window Size.x: %f\n", window->Pos.x, window->Size.x);
-  // printf(N"ode   pos: %f, %f\n\n", ui_node.pos.x, ui_node.pos.y);
     
   ImGui::Text("layer: %d", ui_node.layer);
   if (ui_node.draw_type == CANVAS) {
@@ -1000,17 +1008,7 @@ void DrawGeglNode(Node &ui_node) {
   GPNode::EndNode();
 }
 
-// void DrawCanvasNode(Node &ui_node) {
-//   GPNode::BeginNode(ui_node.id);
-//   ImGui::Text("layer: %d", ui_node.layer);
-  
-//   GPNode::EndNode();
-// }
-
 ImTextureID CreateTexture(const void* data, int width, int height) {
-  // global_node_editor->textures.resize(global_node_editor->textures.size() + 1);
-  // ImTextureID& texture = global_node_editor->textures.back();
-
   ImTextureID texture;
   GLuint texture_id;
   // Upload texture to graphics system
