@@ -23,8 +23,9 @@ struct node_category {
   std::vector<node_io> operations;
 };
 
-int initialize_gegl();
+int  initialize_gegl();
 void test_operation(const char *operation);
+bool gegl_node_has_source(GeglNode *node);
 
 extern std::vector<node_io> node_info;
 extern std::map<std::string, node_category> categories;
