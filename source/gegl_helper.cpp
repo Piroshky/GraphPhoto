@@ -50,17 +50,22 @@ static GList * gegl_operations_build(GList *list, GType type) {
 GeglNode *graph;
 int initialize_gegl() {
 
-  gegl_init(nullptr, nullptr);
 
   // TODO: not having this set as the license causes a segfault when trying to load seamless-clone-compose
   // Not sure what I'm going to do for licensing yet, will figure out later.
+  // This will cause the `GLib-GObject-CRITICAL **: Two different plugins tried to register`
+  // spam on startup if it's after gegl_init...
+  // tools/operations_html.c has it after init, and that's what you have to look at to figure
+  // out how to get a list of operations, because there isn't any documenation for most of GEGL.
+  // But bin/gegl.c has it before init, and that is the correct way to call it.
   g_object_set (gegl_config (),
 		"application-license", "GPL3",
 		NULL);
   
-  graph = gegl_node_new();
+  gegl_init(nullptr, nullptr);
 
-  printf("graph: %p\n", graph);
+  
+  graph = gegl_node_new();
 
   GList *operations = NULL;
   operations = gegl_operations_build(NULL, GEGL_TYPE_OPERATION);
@@ -77,7 +82,16 @@ int initialize_gegl() {
     
     // const char *title = gegl_operation_class_get_key(klass, "title");
     {
-      
+
+      // This doesn't fix the seamless-clone thing without license
+      // if (!gegl_has_operation(klass->name)) {
+      // 	printf("no operation called %s found\n", klass->name);
+      // } else {
+      // 	printf("operation called %s found\n", klass->name);
+      // }
+
+      // If the license isn't set to gpl3 then this will cause a segfault, without telling
+      // you that it's because of a license error.
       GeglNode *node = gegl_node_new_child(graph, "operation", klass->name, NULL);
             
       char **input_pads  = gegl_node_list_input_pads(node);
@@ -140,7 +154,7 @@ int initialize_gegl() {
       // printf("\t%s\n", category);
     }
   }
-
+  
   // printf("---Categories---/n");
   // for (auto c : categories) {
   //   printf("%s ~ %d :", c.first.c_str(), c.second.io);
