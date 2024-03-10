@@ -77,7 +77,7 @@ void InitializeNodeEditor() {
   IM_ASSERT(global_node_editor == NULL);
   global_node_editor = IM_NEW(NodeEditor)();
   item_id_count = 4;
-  
+
   // Initialize GEGL duh
   initialize_gegl();
 
@@ -101,7 +101,7 @@ void InitializeNodeEditor() {
   int edge_id   = CreateGeglNode("gegl:edge");
   Node *edge  = FindNode(edge_id);    
   
-  gegl_node_set(load->gegl_node, "path", "./test.jpg", NULL);
+  gegl_node_set(load->gegl_node, "path", "../test/test.jpg", NULL);
 
 
   NodeProperty *load_out  = FindProperty(load->gegl_output_pads[0]);
@@ -131,8 +131,9 @@ void InitializeNodeEditor() {
     canvas->texture_size = ImVec2(w, h);
   }
   
-
-  
+  serialize_node(edge);
+  serialize_node(load);
+  serialize_node(canvas);
 }
 
 void BeginNodeEditor() {
@@ -666,9 +667,14 @@ void EndNodeEditor() {
   for (auto& ui_node : global_node_editor->node_pool) {
     if (ui_node.draw_type == CANVAS) {
 
-      if(ui_node.update && gegl_node_get_producer(ui_node.gegl_node, "input", NULL)) {
+      // if (gegl_operation_get_source_node(ui_node.gegl_node, "input")) {
+      // 	printf("has source node\n");
+      // } else {
+      // 	printf("no source node\n");
+      // }
+      
+      if(ui_node.update && gegl_node_has_source(ui_node.gegl_node)) {
 	ui_node.update = false;
-	printf("here\n");
 	if(ui_node.texture != 0) {
 	  glDeleteTextures(1, (GLuint*)&ui_node.texture);
 	}
@@ -689,6 +695,7 @@ void EndNodeEditor() {
 
 	ui_node.texture = CreateTexture(image_data, w, h);
 	ui_node.texture_size = ImVec2(w, h);
+	free(image_data);
       }
 
       
@@ -743,24 +750,23 @@ bool create_gegl_link(NodeProperty *a, NodeProperty *b) {
   Node *start = FindNode(a->node_id);
   Node *end   = FindNode(b->node_id);
 
-  printf("trying to create gegl link between %s (%s) and %s (%s)\n",
-	 GEGL_OPERATION_GET_CLASS(gegl_node_get_gegl_operation(start->gegl_node))->name, a->label,
-	 GEGL_OPERATION_GET_CLASS(gegl_node_get_gegl_operation(end->gegl_node))->name, b->label);
+  // printf("trying to create gegl link between %s (%s) and %s (%s)\n",
+  // 	 GEGL_OPERATION_GET_CLASS(gegl_node_get_gegl_operation(start->gegl_node))->name, a->label,
+  // 	 GEGL_OPERATION_GET_CLASS(gegl_node_get_gegl_operation(end->gegl_node))->name, b->label);
                  
   GeglNode *prod = gegl_node_get_producer(end->gegl_node, b->label, NULL);
-  if (prod) {
-    printf("prod name %s\n", GEGL_OPERATION_GET_CLASS(gegl_node_get_gegl_operation(prod))->name);
-  }
+  // if (prod) {
+  //   printf("prod name %s\n", GEGL_OPERATION_GET_CLASS(gegl_node_get_gegl_operation(prod))->name);
+  // }
   
   bool ret = gegl_node_connect(start->gegl_node, a->label,
 			      end->gegl_node,   b->label);
 
   prod = gegl_node_get_producer(end->gegl_node, b->label, NULL);
-  if (prod) {
-    printf("prod2 name %s\n", GEGL_OPERATION_GET_CLASS(gegl_node_get_gegl_operation(prod))->name);
-  }
+  // if (prod) {
+  //   printf("prod2 name %s\n", GEGL_OPERATION_GET_CLASS(gegl_node_get_gegl_operation(prod))->name);
+  // }
   
-  printf("ret %s\n", ret ? "succeed" : "fail");
   return ret;
 }
 
@@ -821,10 +827,7 @@ Link *FindLinkByInput(int input_id) {
 }
 
 Link *FindLinkByOutput(int output_id) {
-  printf("output_id %d\n", output_id);
-  global_node_editor->link_pool.debug();
   for (auto& link : global_node_editor->link_pool) {
-    printf("link {%d, %d}\n", link.start_id, link.end_id);
     if (link.start_id == output_id) {
       return &link;
     }
@@ -968,8 +971,26 @@ void DrawGeglNode(Node &ui_node) {
     NodeProperty *property = FindProperty(id);
     BeginNodeProperty(property);
     
-    if      (g_type_is_a(property->gtype, GEGL_TYPE_PARAM_INT)) {
+    if (g_type_is_a(property->gtype, GEGL_TYPE_PARAM_INT)) {
       ImGui::Text("(INT)  -  %s", property->label);
+      int value;
+      gegl_node_get(ui_node.gegl_node, g_param_spec_get_name(property->pspec), &value, NULL);
+      GeglParamSpecInt *pspec = GEGL_PARAM_SPEC_INT(property->pspec);
+      // int default_value = pspec->default_value;
+
+      ImGui::Text("default value: %d", G_PARAM_SPEC_INT(property->pspec)->default_value);
+      int current_value;
+      // printf("gparamspec name %s\n", g_param_spec_get_name(property->pspec));
+      //gegl_node_get(ui_node.gegl_node, g_param_spec_get_name(property->pspec), &current_value, NULL);
+      // ImGui::Text("current value: %d", current_value);
+      int min = pspec->ui_minimum;
+      int max = pspec->ui_maximum;
+      // ui_step_small = pspec->ui_step_small; //not used yet...
+
+      if (ImGui::DragInt("", &value, 0.2f, min, max)) {
+	// gegl_node_set(ui_node.gegl_node, property->label, value, NULL);
+      }
+      
     }
     else if (g_type_is_a(property->gtype, G_TYPE_DOUBLE)) {
       ImGui::Text("(DOUBLE)  -  %s %s", g_type_name(property->gtype), property->label);
@@ -1067,10 +1088,6 @@ int CreateCanvasNode() {
   return node_id;
 }
 
-// int CreateGeglNode(char *operation) {
-
-// }
-
 int CreateGeglNode(const char *operation) {
   GeglNode *gegl_node = gegl_node_new_child(global_node_editor->graph, "operation", operation, NULL);
   item_id_count += 1;
@@ -1134,6 +1151,7 @@ int CreateGeglNode(const char *operation) {
   for (unsigned int j = 0; j < n_properties; ++j) {
 
     NodeProperty *property = global_node_editor->pin_pool.request();
+    property->pspec = properties[j];
     property->direction = INPUT;
     property->node_id = node_id;
     property->label = strdup(g_param_spec_get_nick(properties[j]));
@@ -1145,8 +1163,14 @@ int CreateGeglNode(const char *operation) {
 
     g_print("\t\t %d  %s\n",property->id, g_param_spec_get_name(properties[j]));
 
+    // GEGL does not initialize node properties to their default values.
     GType parameter_type G_PARAM_SPEC_TYPE(properties[j]);
-    if (g_type_is_a(parameter_type, G_TYPE_PARAM_ENUM)) {
+    if (g_type_is_a(parameter_type, G_TYPE_PARAM_INT)) {
+
+      // gegl_node_set(gegl_node, g_param_spec_get_name(properties[j]),
+      // 		    G_PARAM_SPEC_INT(property->pspec)->default_value, NULL);
+      
+    } else if (g_type_is_a(parameter_type, G_TYPE_PARAM_ENUM)) {
       GParamSpecEnum *pspec = G_PARAM_SPEC_ENUM(properties[j]);
       GEnumClass *eclass = pspec->enum_class;
 
@@ -1167,5 +1191,37 @@ int CreateGeglNode(const char *operation) {
   
   return node_id;
 }
+
+void serialize_node(Node *node) {
+
+  gchar *ret = gegl_node_to_xml(node->gegl_node, "");
+  printf("ret: %s\n", ret);
+
+  printf("---Serialize Node---\n");  
+  // id
+  printf("%d", node->id);
+
+  // pos
+  printf("%f, %f\n", node->pos.x, node->pos.y);
+
+  // layer
+  printf("%d\n", node->layer);
+
+  // gegl node
+  printf("gegl operation: %s\n", GEGL_OPERATION_GET_CLASS(gegl_node_get_gegl_operation(ui_node.gegl_node))->name);
+  
+  // input properties
+  printf("%d\n", node->input_properties.size());
+  
+  for (int id : node->input_properties) {
+    NodeProperty *property = FindProperty(id);
+    printf("\t%d\n", id);
+    printf("\t%s\n", property->label);
+    
+  }
+  
+  
+}
+  
 
 }

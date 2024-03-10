@@ -15,9 +15,12 @@ enum PROPERTY_DIRECTION {INPUT, OUTPUT};
 struct NodeProperty {
   int     id = -1;
   int     node_id = -1;
-  char   *label;
+
   PROPERTY_DIRECTION direction;
-  GType   gtype;
+  char              *label;
+  GType              gtype;
+  GParamSpec        *pspec;
+  
   ImRect  rect;
   ImVec2  pin_pos;
   bool    hovered = false;
@@ -142,6 +145,8 @@ bool NodeSelected(int node_id);
 
 // Functions that are meant to be mainly internal use snake case.
 void set_node_to_top_layer(Node *node);
-  
+
+void serialize_node(Node *node);
+
 extern NodeEditor *global_node_editor;
 }
