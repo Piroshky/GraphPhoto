@@ -9,7 +9,7 @@
 
 namespace GPNode {
 
-enum NODE_DRAW_TYPE {CUSTOM, GEGL, CANVAS};
+enum NODE_DRAW_TYPE : uint32_t {CUSTOM, GEGL, CANVAS};
 enum PROPERTY_DIRECTION {INPUT, OUTPUT};
 
 struct NodeProperty {

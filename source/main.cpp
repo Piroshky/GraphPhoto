@@ -132,8 +132,19 @@ int main(int, char**)
         ImGui::NewFrame();
 	ImGui::ShowDemoWindow();
 
-	ImGui::Begin("GraphPhoto");
-	ImGui::Text("And this is my text");
+	ImGui::Begin("GraphPhoto", NULL, ImGuiWindowFlags_MenuBar);
+
+	static bool save_file = false;
+
+	if (ImGui::BeginMenuBar())
+	{
+	  if (ImGui::BeginMenu("File")) {
+	    ImGui::MenuItem("Save", NULL, &save_file);
+	    ImGui::EndMenu();
+	  }
+	  
+	  ImGui::EndMenuBar();
+	}
 	
 	if (ImGui::BeginTabBar("##TabBar"))
 	{
@@ -154,11 +165,15 @@ int main(int, char**)
 	    ImGui::Text("Selected Nodes: %s", selected_nodes.c_str());
 	  
 	    GPNode::BeginNodeEditor();
+
+	    if (save_file) {
+	      save_file = false;
+	      printf("save_file\n");
+	    }
 	  
 	    // GPNode::BeginNode(1);
 	    // ImGui::Text("This is my test text");
 	    // ImGui::Text("some more text");
-
 	    
 	    // // GPNode::BeginNodeInput(4);
 	    // ImGui::DragFloat("my float", &d, 0.01f);
