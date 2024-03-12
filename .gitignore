@@ -1,3 +1,6 @@
 /build/*.o
+/build/*.d
 /build/graphphoto
 /build/imgui.ini
+/test/
+/todo.org
