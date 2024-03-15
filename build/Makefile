@@ -16,7 +16,7 @@
 
 EXE = graphphoto
 IMGUI_DIR = ../libs/imgui
-SOURCES = ../source/main.cpp ../source/gpnode.cpp ../source/gegl_helper.cpp
+SOURCES = ../source/main.cpp ../source/gpnode.cpp ../source/gegl_helper.cpp ../source/serialize.cpp
 SOURCES += $(IMGUI_DIR)/imgui.cpp $(IMGUI_DIR)/imgui_demo.cpp $(IMGUI_DIR)/imgui_draw.cpp $(IMGUI_DIR)/imgui_tables.cpp $(IMGUI_DIR)/imgui_widgets.cpp
 SOURCES += $(IMGUI_DIR)/backends/imgui_impl_glfw.cpp $(IMGUI_DIR)/backends/imgui_impl_opengl3.cpp
 SOURCES += ../libs/gl3w/gl3w.c
@@ -25,7 +25,7 @@ DEPENDS = ${OBJS:.o=.d}
 UNAME_S := $(shell uname -s)
 LINUX_GL_LIBS = -lGL
 
-CXXFLAGS = -std=c++11 -I$(IMGUI_DIR) -I$(IMGUI_DIR)/backends -I../libs/gl3w -I../libs
+CXXFLAGS = -std=c++17 -I$(IMGUI_DIR) -I$(IMGUI_DIR)/backends -I../libs/gl3w -I../libs
 CXXFLAGS += -g -Wall -Wformat -MMD
 LIBS =
 

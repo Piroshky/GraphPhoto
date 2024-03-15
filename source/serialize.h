@@ -3,6 +3,8 @@
 #include <cstdint>
 #include <cstring>
 
+#include "gpnode.h"
+
 #define GP_FILE_VERSION 1
 #define GP_FILE_SIGNATURE "graphphoto"
 
@@ -12,8 +14,8 @@ struct filedata {
   char *data;
 };
 
-void save_file();
-bool read_file(const char *filename);
+void save_project(GPNode::NodeEditor *editor);
+bool open_project(const char *filename);
 
 // Not using an enum because cpp
 #define GP_TYPE_U32 1

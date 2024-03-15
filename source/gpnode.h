@@ -1,16 +1,18 @@
 #pragma once
+#define IMGUI_DEFINE_MATH_OPERATORS
 #include <imgui.h>
 #include <gegl.h>
 #include <gegl-plugin.h>
 #include <gegl-types.h>
 #include <vector>
 #include <imgui_impl_opengl3.h>
+#include "imgui_internal.h"
 #include "BucketArray.cpp"
 
 namespace GPNode {
 
 enum NODE_DRAW_TYPE : uint32_t {CUSTOM, GEGL, CANVAS};
-enum PROPERTY_DIRECTION {INPUT, OUTPUT};
+enum PROPERTY_DIRECTION : uint32_t {INPUT, OUTPUT};
 
 struct NodeProperty {
   int     id = -1;
@@ -145,8 +147,6 @@ bool NodeSelected(int node_id);
 
 // Functions that are meant to be mainly internal use snake case.
 void set_node_to_top_layer(Node *node);
-
-void serialize_node(Node *node);
 
 extern NodeEditor *global_node_editor;
 }

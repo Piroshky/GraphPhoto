@@ -5,19 +5,20 @@
 #include <GL/gl3w.h>
 #include <GLFW/glfw3.h>
 
-#define IMGUI_DEFINE_MATH_OPERATORS
-#include "imgui_internal.h"
+#include "gpnode.h"
+#include "gegl_helper.h"
+#include "serialize.h"
+
+
 // not included in the builtin imgui math operators for some reason
 static inline ImVec2 operator-(const ImVec2& lhs, const float rhs)              { return ImVec2(lhs.x - rhs, lhs.y - rhs); }
 static inline ImVec2 operator+(const ImVec2& lhs, const float rhs)              { return ImVec2(lhs.x + rhs, lhs.y + rhs); }
 
-#include "gpnode.h"
-#include "gegl_helper.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 extern "C" {
 #include "stb_image.h"
-}
+} 
 
 namespace GPNode {
 
@@ -131,10 +132,6 @@ void InitializeNodeEditor() {
     canvas->texture = CreateTexture(image_data, w, h);
     canvas->texture_size = ImVec2(w, h);
   }
-  
-  serialize_node(edge);
-  serialize_node(load);
-  serialize_node(canvas);
 }
 
 void BeginNodeEditor() {
@@ -1193,63 +1190,5 @@ int CreateGeglNode(const char *operation) {
   return node_id;
 }
 
-#define WRITE_VARIABLE(variable) builder.write(reinterpret_cast<const char*>(&variable), sizeof(variable))
-
-// Writes the length first, then the string.
-// We're going to include the null terminating byte and prepend the size of the string (including the null byte). This just makes things easier.
-void write_c_string(std::stringstream *builder, const char *string) {
-  uint32_t len = strlen(string) + 1;
-  builder->write(reinterpret_cast<const char*>(&len), sizeof(len));
-  builder->write(reinterpret_cast<const char*>(string), len);
-}
-
-// if (!read_n_bytes_from_filedata(&fd, (std::byte*)&variable, sizeof(variable))) {fprintf(stderr, "Unexpected end of file when trying to read " #variable "\n"); return false;}
-
-
-void serialize_node(Node *node) {
-
-  std::stringstream builder;  
-  
-  // gchar *ret = gegl_node_to_xml(node->gegl_node, "");
-  // printf("ret: %s\n", ret);
-
-  printf("---Serialize Node---\n");  
-  // id
-  printf("id %d\n", node->id);
-  WRITE_VARIABLE(node->id);
-
-  // pos
-  printf("%f, %f\n", node->pos.x, node->pos.y);
-  WRITE_VARIABLE(node->pos.x);
-  WRITE_VARIABLE(node->pos.y);
-
-  // layer
-  printf("%d\n", node->layer);
-  WRITE_VARIABLE(node->layer);
-
-  // gegl node
-  const char *gegl_operation = GEGL_OPERATION_GET_CLASS(gegl_node_get_gegl_operation(node->gegl_node))->name;
-  write_c_string(&builder, gegl_operation);
-
-  
-  // input properties
-  printf("num props %ld\n", node->input_properties.size());
-  
-  for (int id : node->input_properties) {
-    NodeProperty *property = FindProperty(id);
-    printf("\t%d\n", id);
-    
-    printf("\t%s\n", property->label);    
-  }
-  
-  char c;
-  while (builder.get(c)) {
-    printf("%x ", c);
-  }
-  printf("\n");
-  
-  
-}
-  
 
 }

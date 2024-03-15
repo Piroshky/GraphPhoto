@@ -18,6 +18,7 @@
 #include "math.h"
 
 #include "gpnode.h"
+#include "serialize.h"
 #include "gegl_helper.h"
 
 #include <string>
@@ -134,12 +135,14 @@ int main(int, char**)
 
 	ImGui::Begin("GraphPhoto", NULL, ImGuiWindowFlags_MenuBar);
 
-	static bool save_file = false;
+	static bool save_file_p = false;
+	static bool open_file_p = false;
 
 	if (ImGui::BeginMenuBar())
 	{
 	  if (ImGui::BeginMenu("File")) {
-	    ImGui::MenuItem("Save", NULL, &save_file);
+	    ImGui::MenuItem("Save", NULL, &save_file_p);
+	    ImGui::MenuItem("Open", NULL, &open_file_p);
 	    ImGui::EndMenu();
 	  }
 	  
@@ -166,9 +169,16 @@ int main(int, char**)
 	  
 	    GPNode::BeginNodeEditor();
 
-	    if (save_file) {
-	      save_file = false;
+	    if (save_file_p) {
+	      save_file_p = false;
 	      printf("save_file\n");
+	      save_project(GPNode::global_node_editor);
+	    }
+
+	    if (open_file_p) {
+	      open_file_p = false;
+	      printf("open_file\n");
+	      open_project("./out.save");
 	    }
 	  
 	    // GPNode::BeginNode(1);
