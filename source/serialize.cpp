@@ -36,19 +36,13 @@ void write_c_string(std::stringstream *builder, const char *string) {
 void serialize_property(std::stringstream *builder, int id) {
   GPNode::NodeProperty *property = GPNode::FindProperty(id);
 
-  printf("\t%d\n", id);
   WRITE_VARIABLE(builder, id);
   WRITE_VARIABLE(builder, property->direction);
   write_c_string(builder, property->label);
-
-  printf("\t%s\n", property->label);
 }
 
 
 void serialize_node(std::stringstream *builder, GPNode::Node *node) {
-
-  // std::stringstream builder;
-  
   printf("---Serialize Node---\n");  
   // id
   printf("id %d\n", node->id);
@@ -69,20 +63,13 @@ void serialize_node(std::stringstream *builder, GPNode::Node *node) {
   printf("%s\n", gegl_operation);
   
   // input properties
-  printf("num props %ld\n", node->input_properties.size());
   uint32_t num_props = node->input_properties.size();
   WRITE_VARIABLE(builder, num_props);
 
   for (int id : node->input_properties) {
     serialize_property(builder, id);
   }
-  
-  char c;
-  while (builder.get(c)) {
-    printf("%x ", c);
-  }
-  printf("\n");
-  
+    
   printf("---END Serialize Node---\n");  
 }
 
@@ -112,15 +99,16 @@ void save_project(GPNode::NodeEditor *editor) {
   uint32_t num_nodes = editor->num_nodes;
   WRITE_VARIABLE(&builder, num_nodes);
     
-  // serealize_node();
-  for (uint32_t i = 0; i < num_nodes; ++i) {
-    serialize_node
+  for (GPNode::Node &node : GPNode::global_node_editor->node_pool) {
+    serialize_node(&builder, &node);
   }
   
+  printf("builder size %ld\n", builder.str().size());
   
   std::ofstream file;
   file.open("./out.save");
   file << builder.rdbuf();
+  printf("builder size %ld\n", builder.str().size());
   file.close();
 }
 
@@ -137,26 +125,66 @@ bool read_n_bytes_from_filedata(filedata *fd, std::byte *dest, uintmax_t n) {
   return true;
 }
 
-#define GET_VARIABLE(fd, variable) if (!read_n_bytes_from_filedata(fd, (std::byte*)&variable, sizeof(variable))) {fprintf(stderr, "Unexpected end of file when trying to read " #variable "\n"); return false;}
+#define GET_VARIABLE(fd, variable) read_n_bytes_from_filedata(fd, (std::byte*)&variable, sizeof(variable))
+
+#define GET_VARIABLE_WARN(fd, variable) if (!read_n_bytes_from_filedata(fd, (std::byte*)&variable, sizeof(variable))) {fprintf(stderr, "Unexpected end of file when trying to read " #variable "\n"); return false;}
+
+char* get_c_string(filedata *fd) {
+  uint32_t len;  
+  bool success = GET_VARIABLE(fd, len);
+  if (!success) {
+    fprintf(stderr,"Unexpected end of file\n");
+    return NULL;
+  }
+  char *ret = (char*)malloc(len);
+  if (ret != NULL) {
+    read_n_bytes_from_filedata(fd, (std::byte*)ret, len);
+  }
+  return ret;
+}
+
+bool read_property(filedata *fd) {
+
+  int id; 
+  GET_VARIABLE_WARN(fd, id);
+  printf("\tid %d\n", id);
+
+  GPNode::PROPERTY_DIRECTION dir;
+  GET_VARIABLE_WARN(fd, dir);
+  
+  
+  char *label = get_c_string(fd);
+  if (!label) return false;
+  printf("label %s\n", label);
+  return true;
+}
 
 bool read_node(filedata *fd) {
   int id;
-  GET_VARIABLE(fd, id);
+  GET_VARIABLE_WARN(fd, id);
 
   ImVec2 pos;
-  GET_VARIABLE(fd, pos.x);
-  GET_VARIABLE(fd, pos.y);
+  GET_VARIABLE_WARN(fd, pos.x);
+  GET_VARIABLE_WARN(fd, pos.y);
 
   int layer;
-  GET_VARIABLE(fd, layer);
+  GET_VARIABLE_WARN(fd, layer);
 
-  char *gegl_operation;
-  get_string(fd, &gegl_operation);
+  printf("-----\n\tid %d\n\tx,y %f %f\n\tlayer %d\n", id, pos.x, pos.y, layer);
+  
+  char *gegl_operation = get_c_string(fd);
+  if (!gegl_operation) { return false; }
+  printf("gegl_operation %s\n", gegl_operation);
 
   uint32_t num_props;
-  GET_VARIABLE(fd, num_props);
+  GET_VARIABLE_WARN(fd, num_props);
+
+  printf("num_props %d\n", num_props);
   
-  printf("id %d\nx,y %f %f\nlayer %d\n", id, pos.x, pos.y, layer);
+  // for (uint32_t i = 0; i < num_props; ++i) {
+  //   printf("i %d\n", i);
+  //   read_property(fd);
+  // }
   
   return true;
 }
@@ -183,7 +211,7 @@ bool open_project(const char *filename) {
   // Read File Version
   // sizeof(uint32_t)
   uint32_t version;
-  GET_VARIABLE(&fd, version);
+  GET_VARIABLE_WARN(&fd, version);
   if (version != 1) {
     fprintf(stderr, "GraphPhoto save file `%s` uses an unsported version (%d). This application can only read version 1\n", filename, version);
     return false;
@@ -191,7 +219,7 @@ bool open_project(const char *filename) {
   printf("version %u\n", version);
 
   uint32_t num_nodes;
-  GET_VARIABLE(&fd, num_nodes);
+  GET_VARIABLE_WARN(&fd, num_nodes);
   printf("num_nodes %d\n", num_nodes);
 
   GPNode::Node *nodes = new GPNode::Node[num_nodes];
