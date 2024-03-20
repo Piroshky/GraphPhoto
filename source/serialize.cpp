@@ -41,7 +41,6 @@ void serialize_property(std::stringstream *builder, int id) {
   write_c_string(builder, property->label);
 }
 
-
 void serialize_node(std::stringstream *builder, GPNode::Node *node) {
   printf("---Serialize Node---\n");  
   // id
@@ -143,22 +142,6 @@ char* get_c_string(filedata *fd) {
   return ret;
 }
 
-bool read_property(filedata *fd) {
-
-  int id; 
-  GET_VARIABLE_WARN(fd, id);
-  printf("\tid %d\n", id);
-
-  GPNode::PROPERTY_DIRECTION dir;
-  GET_VARIABLE_WARN(fd, dir);
-  
-  
-  char *label = get_c_string(fd);
-  if (!label) return false;
-  printf("label %s\n", label);
-  return true;
-}
-
 bool read_node(filedata *fd) {
   int id;
   GET_VARIABLE_WARN(fd, id);
@@ -179,12 +162,21 @@ bool read_node(filedata *fd) {
   uint32_t num_props;
   GET_VARIABLE_WARN(fd, num_props);
 
-  printf("num_props %d\n", num_props);
+  // Read properties
+  printf("num_props %d\n", num_props);  
+  for (uint32_t i = 0; i < num_props; ++i) {
+
+    int id; 
+    GET_VARIABLE_WARN(fd, id);
+    printf("\tid %d\n", id);
+
+    GPNode::PROPERTY_DIRECTION dir;
+    GET_VARIABLE_WARN(fd, dir);
   
-  // for (uint32_t i = 0; i < num_props; ++i) {
-  //   printf("i %d\n", i);
-  //   read_property(fd);
-  // }
+    char *label = get_c_string(fd);
+    if (!label) return false;
+    printf("\tlabel %s\n", label);    
+  }
   
   return true;
 }
@@ -209,7 +201,6 @@ bool open_project(const char *filename) {
   fd.ix += sig_len;
   
   // Read File Version
-  // sizeof(uint32_t)
   uint32_t version;
   GET_VARIABLE_WARN(&fd, version);
   if (version != 1) {
@@ -221,19 +212,12 @@ bool open_project(const char *filename) {
   uint32_t num_nodes;
   GET_VARIABLE_WARN(&fd, num_nodes);
   printf("num_nodes %d\n", num_nodes);
-
-  GPNode::Node *nodes = new GPNode::Node[num_nodes];
   
   for (uint32_t i = 0; i < num_nodes; ++i) {
     if (!read_node(&fd)) {
       return false;
     }    
   }
-
-  // for (uint32_t i = 0; i < num_nodes; ++i) {
-  //   printf("id %d\nx %d\ny %d\n\n", nodes[i].id, nodes[i].pos.x, nodes[i].pos.y);
-  // }
-
   
   return true;
 }
