@@ -66,8 +66,8 @@ void select_node(Node *node) {
   global_node_editor->selected_nodes.push_back(node->id);
 }
 
-//int CreateGeglNode(GeglOperationClass *klass);
-int CreateGeglNode(const char *operation);
+//int NewGeglNode(GeglOperationClass *klass);
+int NewGeglNode(const char *operation);
 void CreateLink(NodeProperty *a, NodeProperty *b);
 void DrawGeglNode(Node &ui_node);
 int CreateCanvasNode();
@@ -93,45 +93,46 @@ void InitializeNodeEditor() {
   global_node_editor->mouse_in_canvas = false;
   global_node_editor->num_nodes = 0;
 
-  int canvas_id = CreateCanvasNode();
-  Node *canvas = FindNode(canvas_id);
-  gegl_node_set(canvas->gegl_node, "buffer", &(canvas->gegl_buffer), NULL);
-  
-  int load_id   = CreateGeglNode("gegl:load");
-  Node *load = FindNode(load_id);
-  
-  int edge_id   = CreateGeglNode("gegl:edge");
-  Node *edge  = FindNode(edge_id);    
-  
-  gegl_node_set(load->gegl_node, "path", "../test/test.jpg", NULL);
 
-
-  NodeProperty *load_out  = FindProperty(load->gegl_output_pads[0]);
-  NodeProperty *edge_in   = FindProperty(edge->gegl_input_pads[0]);
-  NodeProperty *edge_out  = FindProperty(edge->gegl_output_pads[0]);
-  NodeProperty *canvas_in = FindProperty(canvas->gegl_input_pads[0]);
+  // Hardcoded graph
+  // int canvas_id = CreateCanvasNode();
+  // Node *canvas = FindNode(canvas_id);
+  // gegl_node_set(canvas->gegl_node, "buffer", &(canvas->gegl_buffer), NULL);
   
-  CreateLink(load_out, edge_in);
-  CreateLink(edge_out, canvas_in);
-
+  // int load_id   = NewGeglNode("gegl:load");
+  // Node *load = FindNode(load_id);
   
-  if (gegl_node_get_producer(canvas->gegl_node, "input", NULL)) {  
-    gegl_node_process(canvas->gegl_node);
-    int h = gegl_buffer_get_height(canvas->gegl_buffer);
-    int w = gegl_buffer_get_width(canvas->gegl_buffer);
-    canvas->texture_size = ImVec2(w, h);
-    int pixels = gegl_buffer_get_pixel_count(canvas->gegl_buffer);
-    void *image_data = malloc(pixels * 4 * sizeof(char));
-    gegl_buffer_get(canvas->gegl_buffer,
-		    NULL,
-		    1.0,
-		    babl_format ("R'G'B'A u8"),
-		    image_data, GEGL_AUTO_ROWSTRIDE,
-		    GEGL_ABYSS_NONE);
+  // int edge_id   = NewGeglNode("gegl:edge");
+  // Node *edge  = FindNode(edge_id);    
+  
+  // gegl_node_set(load->gegl_node, "path", "../test/test.jpg", NULL);
 
-    canvas->texture = CreateTexture(image_data, w, h);
-    canvas->texture_size = ImVec2(w, h);
-  }
+  // NodeProperty *load_out  = FindProperty(load->gegl_output_pads[0]);
+  // NodeProperty *edge_in   = FindProperty(edge->gegl_input_pads[0]);
+  // NodeProperty *edge_out  = FindProperty(edge->gegl_output_pads[0]);
+  // NodeProperty *canvas_in = FindProperty(canvas->gegl_input_pads[0]);
+  
+  // CreateLink(load_out, edge_in);
+  // CreateLink(edge_out, canvas_in);
+  
+  // if (gegl_node_get_producer(canvas->gegl_node, "input", NULL)) {  
+  //   gegl_node_process(canvas->gegl_node);
+  //   int h = gegl_buffer_get_height(canvas->gegl_buffer);
+  //   int w = gegl_buffer_get_width(canvas->gegl_buffer);
+  //   canvas->texture_size = ImVec2(w, h);
+  //   int pixels = gegl_buffer_get_pixel_count(canvas->gegl_buffer);
+  //   void *image_data = malloc(pixels * 4 * sizeof(char));
+  //   gegl_buffer_get(canvas->gegl_buffer,
+  // 		    NULL,
+  // 		    1.0,
+  // 		    babl_format ("R'G'B'A u8"),
+  // 		    image_data, GEGL_AUTO_ROWSTRIDE,
+  // 		    GEGL_ABYSS_NONE);
+
+  //   canvas->texture = CreateTexture(image_data, w, h);
+  //   canvas->texture_size = ImVec2(w, h);
+  // }
+  // ---
 }
 
 void BeginNodeEditor() {
@@ -159,7 +160,7 @@ void BeginNodeEditor() {
       if (ImGui::BeginMenu(c.first.c_str())) {
 	for (auto op : c.second.operations) {
 	  if (ImGui::MenuItem(op.klass->name, NULL, false, true)) {
-	    CreateGeglNode((char*)op.klass->name);
+	    NewGeglNode((char*)op.klass->name);
 	  }	  
 	}
 	ImGui::EndMenu();
@@ -752,7 +753,7 @@ bool create_gegl_link(NodeProperty *a, NodeProperty *b) {
   // 	 GEGL_OPERATION_GET_CLASS(gegl_node_get_gegl_operation(start->gegl_node))->name, a->label,
   // 	 GEGL_OPERATION_GET_CLASS(gegl_node_get_gegl_operation(end->gegl_node))->name, b->label);
                  
-  GeglNode *prod = gegl_node_get_producer(end->gegl_node, b->label, NULL);
+  // GeglNode *prod = gegl_node_get_producer(end->gegl_node, b->label, NULL);
   // if (prod) {
   //   printf("prod name %s\n", GEGL_OPERATION_GET_CLASS(gegl_node_get_gegl_operation(prod))->name);
   // }
@@ -760,7 +761,7 @@ bool create_gegl_link(NodeProperty *a, NodeProperty *b) {
   bool ret = gegl_node_connect(start->gegl_node, a->label,
 			      end->gegl_node,   b->label);
 
-  prod = gegl_node_get_producer(end->gegl_node, b->label, NULL);
+  // prod = gegl_node_get_producer(end->gegl_node, b->label, NULL);
   // if (prod) {
   //   printf("prod2 name %s\n", GEGL_OPERATION_GET_CLASS(gegl_node_get_gegl_operation(prod))->name);
   // }
@@ -793,6 +794,21 @@ void CreateLink(NodeProperty *a, NodeProperty *b) {
   b->links += 1;
 
   PropagateUpdate(FindNode(b->node_id));
+}
+
+NodeProperty *CreateProperty(int id, int node_id, const char *label, GPNode::PROPERTY_DIRECTION dir, GType type) {
+  NodeProperty *property = global_node_editor->pin_pool.request();
+  if (property == NULL) {
+    return NULL;
+  }
+  property->direction = dir;
+  property->node_id = node_id;
+  property->label = strdup(label);
+  property->gtype = type;
+  property->id = id;
+  property->hovered = false;
+  property->links = 0;
+  return property;
 }
 
 Node *CreateNode(int node_id) {
@@ -977,7 +993,7 @@ void DrawGeglNode(Node &ui_node) {
       // int default_value = pspec->default_value;
 
       ImGui::Text("default value: %d", G_PARAM_SPEC_INT(property->pspec)->default_value);
-      int current_value;
+      // int current_value;
       // printf("gparamspec name %s\n", g_param_spec_get_name(property->pspec));
       //gegl_node_get(ui_node.gegl_node, g_param_spec_get_name(property->pspec), &current_value, NULL);
       // ImGui::Text("current value: %d", current_value);
@@ -1086,10 +1102,10 @@ int CreateCanvasNode() {
   return node_id;
 }
 
-int CreateGeglNode(const char *operation) {
+
+int CreateGeglNode(const char *operation, int node_id) {
   GeglNode *gegl_node = gegl_node_new_child(global_node_editor->graph, "operation", operation, NULL);
-  item_id_count += 1;
-  int node_id = item_id_count;
+
   Node *ui_node = CreateNode(node_id);
   ui_node->draw_type = GEGL;
   ui_node->gegl_node = gegl_node;
@@ -1103,18 +1119,13 @@ int CreateGeglNode(const char *operation) {
   printf("Input Pads:\n");
   gchar ** input_pads = gegl_node_list_input_pads(gegl_node);
   for (char **c = input_pads; c != NULL && *c != 0; ++c) {
-
-    NodeProperty *property = global_node_editor->pin_pool.request();
-    property->direction = INPUT;
-    property->node_id = node_id;
-    property->label = strdup(*c);
-    property->gtype = g_type_from_name("GeglPad");
     item_id_count += 1;
-    property->id = item_id_count;
-    property->hovered = false;
-    property->links = 0;
-
-    ui_node->gegl_input_pads.emplace_back(property->id);
+    NodeProperty *property = CreateProperty(item_id_count, node_id, *c, INPUT, g_type_from_name("GeglPad"));
+    if (property) {
+      ui_node->gegl_input_pads.emplace_back(property->id);
+    } else {
+      fprintf(stderr, "Unable to create property %s, you are likely out of memory\n", *c);
+    }
     
     g_print("\t\t%s\n", *c);
   }
@@ -1124,19 +1135,14 @@ int CreateGeglNode(const char *operation) {
   printf("Output Pads:\n");
   gchar ** output_pads = gegl_node_list_output_pads(gegl_node);
   for (char **c = output_pads; c != NULL && *c != 0; ++c) {
-
-    NodeProperty *property = global_node_editor->pin_pool.request();
-    property->direction = OUTPUT;
-    property->node_id = node_id;
-    property->label = strdup(*c);
-    property->gtype = g_type_from_name("GeglPad");
     item_id_count += 1;
-    property->id = item_id_count;
-    property->hovered = false;
-    property->links = 0;
-
-    ui_node->gegl_output_pads.emplace_back(property->id);
-    
+    NodeProperty *property = CreateProperty(item_id_count, node_id, *c, OUTPUT, g_type_from_name("GeglPad"));
+    if (property) {
+      ui_node->gegl_output_pads.emplace_back(property->id);
+    } else {
+      fprintf(stderr, "Unable to create property %s, you are likely out of memory\n", *c);
+    }
+        
     g_print("\t\t%s\n", *c);   
   }
   g_strfreev(output_pads);
@@ -1147,17 +1153,13 @@ int CreateGeglNode(const char *operation) {
   GeglOperationClass *klass = GEGL_OPERATION_GET_CLASS(gegl_node_get_gegl_operation(ui_node->gegl_node));
   GParamSpec **properties = g_object_class_list_properties((GObjectClass*) klass, &n_properties);
   for (unsigned int j = 0; j < n_properties; ++j) {
-
-    NodeProperty *property = global_node_editor->pin_pool.request();
-    property->pspec = properties[j];
-    property->direction = INPUT;
-    property->node_id = node_id;
-    property->label = strdup(g_param_spec_get_nick(properties[j]));
-    property->gtype = G_PARAM_SPEC_TYPE(properties[j]);
     item_id_count += 1;
-    property->id = item_id_count;
-    property->hovered = false;
-    property->links = 0;
+    NodeProperty *property = CreateProperty(item_id_count, node_id, g_param_spec_get_nick(properties[j]), INPUT, G_PARAM_SPEC_TYPE(properties[j]));
+    if (!property) {
+      fprintf(stderr, "Unable to create property %s, you are likely out of memory\n", g_param_spec_get_nick(properties[j]));
+      continue;
+    }
+    property->pspec = properties[j];
 
     g_print("\t\t %d  %s\n",property->id, g_param_spec_get_name(properties[j]));
 
@@ -1190,5 +1192,14 @@ int CreateGeglNode(const char *operation) {
   return node_id;
 }
 
+
+int NewGeglNode(const char *operation) {
+  item_id_count += 1;
+  return CreateGeglNode(operation, item_id_count);
+}
+
+void LoadGeglNode() {
+  
+}
 
 }
