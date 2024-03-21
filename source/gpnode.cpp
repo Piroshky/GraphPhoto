@@ -45,8 +45,6 @@ inline int node_background(Node n) {
   return (n.layer * 2) - 1;
 }
 
-int item_id_count;
-
 void clear_selected_nodes() {
   for (auto node_id : global_node_editor->selected_nodes) {
     Node *node = FindNode(node_id);
@@ -70,7 +68,6 @@ void select_node(Node *node) {
 int NewGeglNode(const char *operation);
 void CreateLink(NodeProperty *a, NodeProperty *b);
 void DrawGeglNode(Node &ui_node);
-int CreateCanvasNode();
 ImTextureID CreateTexture(const void* data, int width, int height);
   
 NodeEditor *global_node_editor = NULL;
@@ -78,7 +75,7 @@ NodeEditor *global_node_editor = NULL;
 void InitializeNodeEditor() {
   IM_ASSERT(global_node_editor == NULL);
   global_node_editor = IM_NEW(NodeEditor)();
-  item_id_count = 4;
+  global_node_editor->item_id_count = 4;
 
   // Initialize GEGL duh
   initialize_gegl();
@@ -95,7 +92,7 @@ void InitializeNodeEditor() {
 
 
   // Hardcoded graph
-  // int canvas_id = CreateCanvasNode();
+  // int canvas_id = NewCanvasNode();
   // Node *canvas = FindNode(canvas_id);
   // gegl_node_set(canvas->gegl_node, "buffer", &(canvas->gegl_buffer), NULL);
   
@@ -103,7 +100,7 @@ void InitializeNodeEditor() {
   // Node *load = FindNode(load_id);
   
   // int edge_id   = NewGeglNode("gegl:edge");
-  // Node *edge  = FindNode(edge_id);    
+  // Node *edge  = FindNode(edge_id);
   
   // gegl_node_set(load->gegl_node, "path", "../test/test.jpg", NULL);
 
@@ -796,6 +793,27 @@ void CreateLink(NodeProperty *a, NodeProperty *b) {
   PropagateUpdate(FindNode(b->node_id));
 }
 
+// start and end can actually be reversed, the link will still get created
+// the right way
+void CreateLink(int start_id, int end_id) {
+  if (start_id == end_id) {
+    fprintf(stderr, "Tried to create link from property to itself\n");
+    return;
+  }
+    
+  NodeProperty *start = FindProperty(start_id);
+  if (start == NULL) {
+    fprintf(stderr, "Tried to create link with invalid source property\n");
+    return;
+  }
+  NodeProperty *end = FindProperty(end_id);
+  if (end == NULL) {
+    fprintf(stderr, "Tried to create link with invalid sink property\n");
+    return;
+  }
+  CreateLink(start, end);
+}
+
 NodeProperty *CreateProperty(int id, int node_id, const char *label, GPNode::PROPERTY_DIRECTION dir, GType type) {
   NodeProperty *property = global_node_editor->pin_pool.request();
   if (property == NULL) {
@@ -819,6 +837,29 @@ Node *CreateNode(int node_id) {
   new_node->layer = global_node_editor->num_nodes;
 
   return new_node;
+}
+
+void SetPropertyId(std::vector<int> *vec, const char *label, int property_id) {
+  printf("<");
+  for (int id : *vec) {
+    printf("%d ", id);
+  }
+  printf(">\n");
+  
+  for (int &id : *vec) {
+    GPNode::NodeProperty *property = FindProperty(id);
+    printf("%s\n", property->label);
+    if (strcmp(property->label, label) == 0) {
+      id = property_id;
+      property->id = property_id;
+      break;
+    }
+  }
+  printf("<");
+  for (int id : *vec) {
+    printf("%d ", id);
+  }
+  printf(">\n");
 }
 
 //// get node from node list, or create node with given id
@@ -1063,10 +1104,9 @@ ImTextureID CreateTexture(const void* data, int width, int height) {
   return texture;
 }
 
-int CreateCanvasNode() {
-
-  item_id_count += 1;
-  int node_id = item_id_count;
+int CreateCanvasNode(int node_id, int property_id) {
+  // item_id_count += 1;
+  // int node_id = item_id_count;
   Node *ui_node = CreateNode(node_id);
 
   printf("canvas node layer %d\n", ui_node->layer);
@@ -1082,8 +1122,9 @@ int CreateCanvasNode() {
   property->node_id = node_id;
   property->label = strdup("input");
   property->gtype = g_type_from_name("GeglPad");
-  item_id_count += 1;
-  property->id = item_id_count;
+  // item_id_count += 1;
+  // property->id = item_id_count;
+  property->id = property_id;
   property->hovered = false;
   property->links = 0;
 
@@ -1100,6 +1141,14 @@ int CreateCanvasNode() {
   // ui_node->texture_size = ImVec2(image_width, image_height);
 
   return node_id;
+}
+
+int NewCanvasNode() {
+  global_node_editor->item_id_count += 1;
+  int node_id = global_node_editor->item_id_count;
+  global_node_editor->item_id_count += 1;
+  int property_id = global_node_editor->item_id_count;
+  return CreateCanvasNode(node_id, property_id);
 }
 
 
@@ -1119,8 +1168,8 @@ int CreateGeglNode(const char *operation, int node_id) {
   printf("Input Pads:\n");
   gchar ** input_pads = gegl_node_list_input_pads(gegl_node);
   for (char **c = input_pads; c != NULL && *c != 0; ++c) {
-    item_id_count += 1;
-    NodeProperty *property = CreateProperty(item_id_count, node_id, *c, INPUT, g_type_from_name("GeglPad"));
+    global_node_editor->item_id_count += 1;
+    NodeProperty *property = CreateProperty(global_node_editor->item_id_count, node_id, *c, INPUT, g_type_from_name("GeglPad"));
     if (property) {
       ui_node->gegl_input_pads.emplace_back(property->id);
     } else {
@@ -1135,8 +1184,8 @@ int CreateGeglNode(const char *operation, int node_id) {
   printf("Output Pads:\n");
   gchar ** output_pads = gegl_node_list_output_pads(gegl_node);
   for (char **c = output_pads; c != NULL && *c != 0; ++c) {
-    item_id_count += 1;
-    NodeProperty *property = CreateProperty(item_id_count, node_id, *c, OUTPUT, g_type_from_name("GeglPad"));
+    global_node_editor->item_id_count += 1;
+    NodeProperty *property = CreateProperty(global_node_editor->item_id_count, node_id, *c, OUTPUT, g_type_from_name("GeglPad"));
     if (property) {
       ui_node->gegl_output_pads.emplace_back(property->id);
     } else {
@@ -1153,8 +1202,8 @@ int CreateGeglNode(const char *operation, int node_id) {
   GeglOperationClass *klass = GEGL_OPERATION_GET_CLASS(gegl_node_get_gegl_operation(ui_node->gegl_node));
   GParamSpec **properties = g_object_class_list_properties((GObjectClass*) klass, &n_properties);
   for (unsigned int j = 0; j < n_properties; ++j) {
-    item_id_count += 1;
-    NodeProperty *property = CreateProperty(item_id_count, node_id, g_param_spec_get_nick(properties[j]), INPUT, G_PARAM_SPEC_TYPE(properties[j]));
+    global_node_editor->item_id_count += 1;
+    NodeProperty *property = CreateProperty(global_node_editor->item_id_count, node_id, g_param_spec_get_nick(properties[j]), INPUT, G_PARAM_SPEC_TYPE(properties[j]));
     if (!property) {
       fprintf(stderr, "Unable to create property %s, you are likely out of memory\n", g_param_spec_get_nick(properties[j]));
       continue;
@@ -1192,11 +1241,11 @@ int CreateGeglNode(const char *operation, int node_id) {
   return node_id;
 }
 
-
 int NewGeglNode(const char *operation) {
-  item_id_count += 1;
-  return CreateGeglNode(operation, item_id_count);
+  global_node_editor->item_id_count += 1;
+  return CreateGeglNode(operation, global_node_editor->item_id_count);
 }
+
 
 void LoadGeglNode() {
   

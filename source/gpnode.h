@@ -90,7 +90,8 @@ struct NodeEditor {
   BucketArray<NodeProperty, 40> pin_pool;
   BucketArray<Link, 40>         link_pool;
   BucketArray<ImTextureID, 40>  textures;
-  
+
+  int     item_id_count;
   Node   *current_node;
   int     num_nodes;
   int     num_links;
@@ -133,9 +134,15 @@ void EndNode();
 void BeginNodeInput(int id);
 void EndNodeInput();
 
-int CreateCanvasNode();
+int CreateCanvasNode(int node_id, int property_id);
+int CreateGeglNode(const char *operation, int node_id);
+int NewGeglNode();
+int NewCanvasNode();
+
+void SetPropertyId(std::vector<int> *vec, const char *label, int property_id);
 
 void CreateLink(NodeProperty *a, NodeProperty *b);
+void CreateLink(int start_id, int end_id);
 void DestroyLink(Link *link);
 
 Link *FindLinkByInput(int input_id);
